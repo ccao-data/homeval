@@ -29,7 +29,7 @@ hugo serve
 ```
 
 3. Any reports that [you have
-   generated](https://github.com/ccao-data/homeval/blob/main/scripts/generate_pinval/generate_pinval.py)
+   generated](https://github.com/ccao-data/homeval/blob/main/scripts/generate_homeval/generate_homeval.py)
    will be available in a browser at http://localhost:1313/.
 
 ### Generating reports
@@ -62,6 +62,6 @@ documentation for the script.
 ## Deployment
 
 We manage deployments using the [`generate-homeval` GitHub
-workflow](https://github.com/ccao-data/homeval/actions/workflows/generate-pinval.yaml).
+workflow](https://github.com/ccao-data/homeval/actions/workflows/generate-homeval.yaml).
 That workflow includes options for deploying to a development environment as
 well as the production environment.

@@ -52,7 +52,7 @@ wheels = [
 ]
 
 [[package]]
-name = "generate-pinval"
+name = "generate-homeval"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
