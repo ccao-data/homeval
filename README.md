@@ -28,13 +28,12 @@ cd hugo
 hugo serve
 ```
 
-3. Any reports that [you have
-   generated](https://github.com/ccao-data/homeval/blob/main/scripts/generate_homeval/generate_homeval.py)
+3. Any reports that [you have generated](#generating-reports)
    will be available in a browser at http://localhost:1313/.
 
 ### Generating reports
 
-You can use the [`scripts/generate_homeval`
+You can use the [`generate_homeval`
 script](https://github.com/ccao-data/homeval/blob/main/scripts/generate_homeval/generate_homeval.py)
 to generate reports that you can view locally.
 
