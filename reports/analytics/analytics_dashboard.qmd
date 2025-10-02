@@ -28,17 +28,15 @@ library(urltools)
 
 
 ```{r}
-AWS_ATHENA_CONN_NOCTUA <- dbConnect(noctua::athena())
+conn <- dbConnect(noctua::athena())
 
-cache_dir <- "data/cache"
+cache_dir <- "data/assessment_card"
 dir.create(cache_dir, showWarnings = FALSE)
 
 cache_file <- file.path(cache_dir, "assessment_card.parquet")
 
 if (!file.exists(cache_file)) {
   message("Cache not found. Querying Athena and saving to cache...")
-
-  conn <- dbConnect(noctua::athena())
 
   assessment_card <- dbGetQuery(
     conn,
@@ -69,7 +67,6 @@ to_epoch_ms_utc <- function(x_dt_local) {
   as.numeric(with_tz(x_dt_local, "UTC")) * 1000
 }
 
-
 fetch_events_for_day <- function(date_local) {
   start_local <- as.POSIXct(date_local, tz = tz_local)
   end_local <- start_local + days(1)
@@ -77,7 +74,7 @@ fetch_events_for_day <- function(date_local) {
   start_ms <- to_epoch_ms_utc(start_local)
   end_ms <- to_epoch_ms_utc(end_local)
 
-  # First call
+  # Create an initial call
   resp <- cloudwatchlogs_client$get_log_events(
     logGroupName  = log_group_name,
     logStreamName = log_stream_name,
@@ -121,7 +118,6 @@ fetch_events_for_day <- function(date_local) {
       datetime = with_tz(as_datetime(timestamp / 1000, tz = "UTC"), tz_local),
       date     = as.Date(datetime)
     ) %>%
-    # keep only rows that actually fall on this local date (defensive)
     filter(date == date_local)
 }
 
@@ -137,6 +133,7 @@ cached_dates <- str_match(
   basename(cached_files),
   "logs_(\\d{4}-\\d{2}-\\d{2})\\.parquet"
 )[, 2]
+
 cached_dates <- as.Date(na.omit(cached_dates))
 
 # Build the full sequence of dates you care about
