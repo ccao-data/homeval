@@ -1,5 +1,5 @@
 ---
-title: "pin-val-analytics"
+title: "Home-Val Analytics"
 execute:
   echo: false
   warning: false
@@ -232,14 +232,15 @@ data <- logs %>%
       select(
         meta_pin, char_class, assessment_year,
         meta_triad_name, meta_card_num, is_report_eligible,
-        reason_report_ineligible, meta_township_code
+        reason_report_ineligible, meta_township_name
       ),
     by = c("pin" = "meta_pin")
   )
 ```
 
+---
 
-## Request count by class
+## Request Count by Class
 
 ::: {.panel-tabset}
 
@@ -271,7 +272,7 @@ data %>%
   )
 ```
 
-### Count over time
+### Count Over Time
 
 NA class values are removed
 ```{r}
@@ -299,7 +300,7 @@ data %>%
   )
 ```
 
-### % over time
+### % Over Time
 
 ```{r}
 data %>%
@@ -332,7 +333,9 @@ data %>%
 ---
 
 
-## Request count by year
+## Request Count by Extract Year
+
+Extract year refers to the year the property was re-assessed. This can be the same as the query year, but does not have to be.
 
 ::: {.panel-tabset}
 
@@ -384,7 +387,7 @@ data %>%
   )
 ```
 
-### % over time
+### % Over Time
 
 ```{r}
 data %>%
@@ -416,7 +419,7 @@ data %>%
 
 ---
 
-## Request count by report eligibility
+## Request Count by Report Eligibility
 
 ::: {.panel-tabset}
 
@@ -445,6 +448,7 @@ data %>%
     yaxis = list(title = "Count")
   )
 ```
+
 ### Type of Ineligibility Reason
 
 ```{r}
@@ -468,8 +472,7 @@ data %>%
   )
 ```
 
-
-### Count over time
+### Count Over Time
 
 ```{r}
 data %>%
@@ -493,7 +496,7 @@ data %>%
   )
 ```
 
-### % over time
+### % Over Time
 
 ```{r}
 data %>%
@@ -525,7 +528,7 @@ data %>%
 ```{r}
 df_counts <- data %>%
   mutate(
-    township = meta_township_code,
+    township = meta_township_name,
     triad = meta_triad_name
   ) %>%
   filter(!is.na(township), !is.na(extract_year)) %>%
@@ -560,7 +563,7 @@ plot_township_year <- function(df_counts, target_year) {
 years <- sort(unique(df_counts$extract_year))
 ```
 
-## Request count by township and reassessment year
+## Request Count by Township and Reassessment Year
 
 ::: {.panel-tabset}
 
@@ -578,7 +581,7 @@ plot_township_year(df_counts, "2025")
 
 ---
 
-## Distribution of HTTP response status codes over time
+## Distribution of HTTP Response Status Code over Time
 
 ```{r}
 data %>%
@@ -606,7 +609,7 @@ data %>%
 ```
 ---
 
-## Recent errors (non-2xx/3xx status codes)
+## Recent Errors (non-2xx/3xx status codes)
 
 ```{r}
 data %>%
@@ -635,7 +638,7 @@ data %>%
 
 ---
 
-## Most common browsers
+## Most Common Browsers
 
 ```{r}
 data %>%
@@ -679,7 +682,7 @@ data %>%
 
 ---
 
-## Most common referer domains
+## Most Common Referer Domains
 
 ```{r}
 data %>%
@@ -710,7 +713,7 @@ data %>%
 
 ---
 
-## Cache hit rate over time
+## Cache Hit Rate over Time
 
 ```{r}
 data %>%
