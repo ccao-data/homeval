@@ -1,0 +1,692 @@
+---
+title: "pin-val-analytics"
+execute:
+  echo: false
+  warning: false
+  message: false
+format:
+  html:
+    embed-resources: true
+    grid:
+      body-width: 1000px
+---
+
+```{r}
+library(arrow)
+library(DBI)
+library(dplyr)
+library(fs)
+library(glue)
+library(lubridate)
+library(paws)
+library(plotly)
+library(purrr)
+library(tibble)
+library(tidyverse)
+library(urltools)
+```
+
+
+```{r}
+AWS_ATHENA_CONN_NOCTUA <- dbConnect(noctua::athena())
+
+cache_dir <- "data/cache"
+dir.create(cache_dir, showWarnings = FALSE)
+
+cache_file <- file.path(cache_dir, "assessment_card.parquet")
+
+if (!file.exists(cache_file)) {
+  message("Cache not found. Querying Athena and saving to cache...")
+
+  conn <- dbConnect(noctua::athena())
+
+  assessment_card <- dbGetQuery(
+    conn,
+    "SELECT * FROM pinval.vw_assessment_card"
+  )
+
+  write_parquet(assessment_card, cache_file)
+
+} else {
+  message("Reading cached file")
+  assessment_card <- read_parquet(cache_file)
+}
+
+
+```
+
+```{r}
+tz_local      <- "America/Chicago"
+baseline_date <- as.Date("2025-09-04")
+
+log_group_name  <- "/aws-cloudfront/pinval-prod"
+log_stream_name <- "CloudFront_E3AIN3GTEPCCYR"
+
+out_dir <- fs::path_abs("data/cloudwatch_cache")
+fs::dir_create(out_dir)
+message("Writing to: ", out_dir)
+
+cloudwatchlogs_client <- paws::cloudwatchlogs()
+
+to_epoch_ms_utc <- function(x_dt_local) {
+  as.numeric(with_tz(x_dt_local, "UTC")) * 1000
+}
+
+
+fetch_events_for_day <- function(date_local) {
+  start_local <- as.POSIXct(date_local, tz = tz_local)
+  end_local   <- start_local + days(1)
+
+  start_ms <- to_epoch_ms_utc(start_local)
+  end_ms   <- to_epoch_ms_utc(end_local)
+
+  # First call
+  resp <- cloudwatchlogs_client$get_log_events(
+    logGroupName  = log_group_name,
+    logStreamName = log_stream_name,
+    startTime     = start_ms,
+    endTime       = end_ms,
+    startFromHead = TRUE
+  )
+
+  events <- resp$events %||% list()
+  prev_token <- NULL
+  next_token <- resp$nextForwardToken %||% NULL
+
+  # Keep calling until token stops changing
+  while (!is.null(next_token) && !identical(next_token, prev_token)) {
+    prev_token <- next_token
+    resp <- cloudwatchlogs_client$get_log_events(
+      logGroupName      = log_group_name,
+      logStreamName     = log_stream_name,
+      nextToken         = next_token,
+      startFromHead     = TRUE
+    )
+    events <- c(events, resp$events %||% list())
+    next_token <- resp$nextForwardToken %||% NULL
+  }
+
+  if (length(events) == 0) {
+    return(tibble(
+      timestamp = numeric(0),
+      message   = character(0),
+      datetime  = as.POSIXct(character(0)),
+      date      = as.Date(character(0))
+    ))
+  }
+
+  tibble(
+    timestamp = map_dbl(events, ~ .x$timestamp),
+    message   = map_chr(events, ~ .x$message)
+  ) %>%
+    mutate(
+      # CloudWatch timestamps are epoch ms in UTC
+      datetime = with_tz(as_datetime(timestamp / 1000, tz = "UTC"), tz_local),
+      date     = as.Date(datetime)
+    ) %>%
+    # keep only rows that actually fall on this local date (defensive)
+    filter(date == date_local)
+}
+
+# Today in local time
+today_local <- as.Date(with_tz(Sys.time(), tz_local))
+
+# Look for already-cached files like logs_YYYY-MM-DD.parquet
+cached_files <- dir_ls(out_dir, regexp = "logs_\\d{4}-\\d{2}-\\d{2}\\.parquet$", type = "file")
+cached_dates <- str_match(basename(cached_files), "logs_(\\d{4}-\\d{2}-\\d{2})\\.parquet")[,2]
+cached_dates <- as.Date(na.omit(cached_dates))
+
+# Build the full sequence of dates you care about
+all_dates <- seq(baseline_date, today_local, by = "day")
+
+# Download plan:
+# - Always refresh today's file
+# - For other dates, only download if not cached yet
+dates_to_fetch <- c(
+  setdiff(all_dates[all_dates != today_local], cached_dates),
+  today_local
+) %>% sort()
+
+message("Dates to fetch (", length(dates_to_fetch), "): ",
+        paste(format(dates_to_fetch), collapse = ", "))
+
+# ------------------------------
+# DOWNLOAD + CACHE
+# ------------------------------
+walk(dates_to_fetch, function(d) {
+  out_file <- fs::path(out_dir, paste0("logs_", format(d), ".parquet"))
+  message("Target file: ", fs::path_abs(out_file))
+
+  if (fs::file_exists(out_file) && d != today_local) {
+    message("Skipping ", format(d), " (already cached).")
+    return(invisible(NULL))
+  }
+
+  message("Fetching ", format(d), " ...")
+  df <- tryCatch(fetch_events_for_day(d), error = function(e) {
+    warning("Failed to fetch ", format(d), ": ", conditionMessage(e))
+    tibble::tibble()
+  })
+
+  arrow::write_parquet(df, out_file)
+  message("Wrote ", nrow(df), " events to ", fs::path_abs(out_file))
+  stopifnot(fs::file_exists(out_file))
+  message("Verified exists: ", as.character(fs::file_size(out_file)), " bytes")
+})
+
+logs <- fs::dir_ls(
+  out_dir,
+  regexp = "logs_\\d{4}-\\d{2}-\\d{2}\\.parquet$",
+  type   = "file"
+) %>%
+  purrr::map_dfr(arrow::read_parquet)
+
+```
+
+
+```{r}
+fields <- c(
+  "date","time","sc-bytes","c-ip","cs-method","cs(Host)",
+  "cs-uri-stem","sc-status","cs(Referer)","cs(User-Agent)",
+  "cs-uri-query","x-host-header","cs-protocol","cs-bytes",
+  "time-taken","x-forwarded-for","x-edge-response-result-type",
+  "cs-protocol-version","c-port","time-to-first-byte",
+  "sc-content-type","sc-content-len"
+)
+
+data <- logs %>%
+  mutate(parsed = map(message, ~ {
+    val <- tryCatch(jsonlite::fromJSON(.x, simplifyVector = TRUE), error = function(e) NULL)
+    if (is.null(val)) return(rep(NA_character_, length(fields)))
+    out <- setNames(vector("list", length(fields)), fields)
+    for (nm in fields) {
+      out[[nm]] <- if (nm %in% names(val)) as.character(val[[nm]]) else NA_character_
+    }
+    out
+  })) %>%
+  # Remove any existing columns that would clash with parsed names
+  select(-any_of(fields)) %>%
+  tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
+  mutate(
+    pin = coalesce(
+      str_extract(`cs(Referer)`, "\\d{14}(?=\\.html)"),
+      str_extract(`cs-uri-stem`, "\\d{14}(?=\\.html)")
+    ),
+    extract_year = coalesce(
+      str_extract(`cs(Referer)`, "(?<=/)(202[0-9])(?=/)"),
+      str_extract(`cs-uri-stem`, "(?<=/)(202[0-9])(?=/)")
+    )
+  ) %>%
+  left_join(
+    assessment_card %>%
+      # Select the most recent year. We can filter based on matching triad to
+      # assessment year, but there were also observations for each of the three
+      # triads.
+      filter(assessment_year == 2025) %>%
+      select(meta_pin, char_class, assessment_year, meta_triad_name, meta_card_num, is_report_eligible, reason_report_ineligible, meta_township_code),
+    by = c("pin" = "meta_pin")
+  )
+```
+
+## Request count by class
+
+NA Values are for requests that did not match a valid PIN
+
+```{r}
+data %>%
+  mutate(char_class = ifelse(is.na(char_class), "NA", as.character(char_class))) %>%
+  group_by(char_class) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  plot_ly(
+    x = ~char_class,
+    y = ~request_count,
+    type = "bar",
+    marker = list(color = "lightblue"),
+    hovertemplate = paste(
+      "Class: %{x}<br>",
+      "Count: %{y}<extra></extra>"
+    )
+  ) %>%
+  layout(
+    title = "Request Count by Class",
+    xaxis = list(title = "Class"),
+    yaxis = list(title = "Count"),
+    showlegend = FALSE
+  )
+
+```
+
+# Request count by class over time (total)
+
+NA class values are removed
+```{r}
+data %>%
+  filter(!is.na(char_class)) %>%
+  mutate(date = as.Date(datetime)) %>%
+  group_by(date, char_class) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  plot_ly(
+    x = ~date,
+    y = ~request_count,
+    color = ~char_class,
+    type  = "bar",
+    hovertemplate = paste(
+      "Date: %{x}<br>",
+      "Class: %{fullData.name}<br>",
+      "Count: %{y}<extra></extra>"
+    )
+  ) %>%
+  layout(
+    barmode = "stack",
+    title = "Request Count by Class Over Time",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Count"),
+    legend = list(title = list(text = "Class"))
+  )
+
+```
+
+```{r}
+data %>%
+  mutate(date = as.Date(datetime)) %>%
+  filter(!is.na(char_class)) %>%
+  group_by(date, char_class) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  group_by(date) %>%
+  mutate(pct = request_count / sum(request_count) * 100) %>%
+  plot_ly(
+    x = ~date,
+    y = ~pct,
+    color = ~char_class,
+    type = "bar",
+    hovertemplate = paste(
+      "Date: %{x}<br>",
+      "Class: %{fullData.name}<br>",
+      "Share: %{y:.1f}%<extra></extra>"
+    )
+  ) %>%
+  layout(
+    barmode = "stack",
+    title = "Request Count by Class Over Time (%)",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Percentage", ticksuffix = "%"),
+    legend = list(title = list(text = "Class"))
+  )
+
+```
+# Request count by extract year
+```{r}
+data %>%
+  group_by(extract_year) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  plot_ly(
+    x = ~extract_year,
+    y = ~request_count,
+    type = "bar",
+    marker = list(color = "steelblue"),
+    hovertemplate = paste(
+      "Year: %{x}<br>",
+      "Count: %{y}<extra></extra>"
+    )
+  ) %>%
+  layout(
+    xaxis = list(title = "Year"),
+    yaxis = list(title = "Count")
+  )
+```
+## Request count by extract year over time (total)
+
+```{r}
+data %>%
+  filter(!is.na(extract_year)) %>%
+  group_by(date, extract_year) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  plot_ly(
+    x = ~date,
+    y = ~request_count,
+    color = ~extract_year,
+    type = "bar",
+    hovertemplate = paste(
+      "Date: %{x}<br>",
+      "Year: %{fullData.name}<br>",
+      "Count: %{y}<extra></extra>"
+    )
+  ) %>%
+  layout(
+    barmode = "stack",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Count"),
+    legend = list(title = list(text = "Year"))
+  )
+```
+## Request count by extract year over time (%)
+
+```{r}
+data %>%
+  filter(!is.na(extract_year)) %>%
+  group_by(date, extract_year) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  group_by(date) %>%
+  mutate(pct = request_count / sum(request_count) * 100) %>%
+  plot_ly(
+    x = ~date,
+    y = ~pct,
+    color = ~extract_year,
+    type = "bar",
+    hovertemplate = paste(
+      "Date: %{x}<br>",
+      "Year: %{fullData.name}<br>",
+      "Share: %{y:.1f}%<extra></extra>"
+    )
+  ) %>%
+  layout(
+    barmode = "stack",
+    title = "Request Count by Reassessment Year Over Time (%)",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Percentage", ticksuffix = "%"),
+    legend = list(title = list(text = "Year"))
+  )
+```
+
+# Request count by report eligibility
+```{r}
+# Do we want to include NA values here?
+data %>%
+  mutate(
+    eligibility = ifelse(is_report_eligible == TRUE, "Eligible", "Not Eligible")
+  ) %>%
+  group_by(eligibility) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  plot_ly(
+    x = ~eligibility,
+    y = ~request_count,
+    type = "bar",
+    marker = list(color = c("steelblue", "tomato")),
+    hovertemplate = paste(
+      "Eligibility: %{x}<br>",
+      "Count: %{y}<extra></extra>"
+    )
+  ) %>%
+  layout(
+    title = "Request Count by Report Eligibility",
+    xaxis = list(title = "Eligibility"),
+    yaxis = list(title = "Count")
+  )
+```
+## Request count by report eligibility reason
+
+```{r}
+data %>%
+  filter(!is.na(reason_report_ineligible)) %>%
+  group_by(reason_report_ineligible) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  plot_ly(
+    x = ~reason_report_ineligible,
+    y = ~request_count,
+    type = "bar",
+    marker = list(color = "steelblue"),
+    hovertemplate = paste(
+      "Reason: %{x}<br>",
+      "Count: %{y}<extra></extra>"
+    )
+  ) %>%
+  layout(
+    title = "Request Count by Report Eligibility Reason",
+    xaxis = list(title = "Eligibility Reason"),
+    yaxis = list(title = "Count")
+  )
+```
+
+
+##
+
+```{r}
+
+data %>%
+  filter(!is.na(reason_report_ineligible)) %>%
+  mutate(date = as.Date(datetime)) %>%
+  group_by(date, reason_report_ineligible) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  plot_ly(
+    x = ~date,
+    y = ~request_count,
+    color = ~reason_report_ineligible,
+    type  = "bar",
+    hovertemplate = "Date: %{x}<br>Reason: %{fullData.name}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    barmode = "stack",
+    title = "Request Count by Report Eligibility Reason Over Time (Total)",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Count"),
+    legend = list(title = list(text = "Eligibility Reason"))
+  )
+```
+
+```{r}
+
+data %>%
+  filter(!is.na(reason_report_ineligible)) %>%
+  mutate(date = as.Date(datetime)) %>%
+  group_by(date, reason_report_ineligible) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  group_by(date) %>%
+  mutate(pct = request_count / sum(request_count) * 100) %>%
+  plot_ly(
+    x = ~date,
+    y = ~pct,
+    color = ~reason_report_ineligible,
+    type  = "bar",
+    hovertemplate = "Date: %{x}<br>Reason: %{fullData.name}<br>Share: %{y:.1f}%<extra></extra>"
+  ) %>%
+  layout(
+    barmode = "stack",
+    title = "Request Count by Report Eligibility Reason Over Time (%)",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Percentage", ticksuffix = "%"),
+    legend = list(title = list(text = "Eligibility Reason"))
+  )
+```
+
+```{r}
+df_counts <- data %>%
+  mutate(
+    township = meta_township_code,
+    triad = meta_triad_name
+  ) %>%
+  filter(!is.na(township), !is.na(extract_year)) %>%
+  group_by(extract_year, triad, township) %>%
+  summarise(request_count = n(), .groups = "drop")
+
+plot_township_year <- function(df_counts, target_year) {
+  df_y <- df_counts %>%
+    filter(extract_year == target_year) %>%
+    mutate(x_label = paste(triad, township, sep = " | ")) %>%
+    arrange(triad, township)
+
+  plot_ly(
+    df_y,
+    x = ~x_label,
+    y = ~request_count,
+    type = "bar",
+    color = ~triad,
+    hovertemplate = paste(
+      "Year: ", target_year, "<br>",
+      "Township: %{x}<br>",
+      "Count: %{y}<extra></extra>"
+    )
+  ) %>%
+    layout(
+      xaxis = list(title = "Triad | Township"),
+      yaxis = list(title = "Count"),
+      legend = list(title = list(text = "Triad"))
+    )
+}
+
+years <- sort(unique(df_counts$extract_year))
+
+```
+
+## Request count by township and reassessment year {.tabset}
+### 2024
+```{r}
+plot_township_year(df_counts, "2024")
+```
+
+```{r}
+plot_township_year(df_counts, "2025")
+```
+
+## Distribution of HTTP Response Status Codes Over Time
+```{r}
+data %>%
+  mutate(
+    date = as.Date(datetime),
+    status = ifelse(is.na(`sc-status`), "Unknown", as.character(`sc-status`))
+  ) %>%
+  group_by(date, status) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  arrange(date, status) %>%
+  plot_ly(
+    x = ~date,
+    y = ~request_count,
+    color = ~status,
+    type = "scatter",
+    mode = "lines+markers",
+    hovertemplate = "Date: %{x}<br>Status: %{fullData.name}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    title = "Distribution of HTTP Response Status Codes Over Time",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Count"),
+    legend = list(title = list(text = "Status"))
+  )
+```
+
+## Recent Errors (non-2xx/3xx status codes)
+
+```{r}
+data %>%
+  # Keep only errors (not 2xx or 3xx)
+  filter(!is.na(`sc-status`), !substr(`sc-status`, 1, 1) %in% c("2", "3")) %>%
+  mutate(
+    timestamp = as.POSIXct(datetime),
+    status    = as.character(`sc-status`),
+    path      = `cs-uri-stem`
+  ) %>%
+  arrange(desc(timestamp)) %>%
+  slice_head(n = 100) %>%
+  plot_ly(
+    type = "table",
+    header = list(
+      values = c("Timestamp", "Status", "Path"),
+      fill = list(color = "lightgrey"),
+      align = "left"
+    ),
+    cells = list(
+      values = list(~timestamp, ~status, ~path),
+      align = "left"
+    )
+  )
+```
+```{r}
+data %>%
+  mutate(
+    ua_raw = `cs(User-Agent)`,
+    ua     = str_to_lower(ua_raw),
+    browser = case_when(
+      str_detect(ua, "bot|crawler|spider|slurp|baiduspider|ahrefs|semrush|facebookexternalhit|bingpreview") ~ "Bot / Crawler",
+      str_detect(ua, "edg/|edge/") ~ "Microsoft Edge",
+      str_detect(ua, "opr/|opera") ~ "Opera",
+      str_detect(ua, "samsungbrowser") ~ "Samsung Internet",
+      str_detect(ua, "brave") ~ "Brave",
+      str_detect(ua, "safari") & !str_detect(ua, "chrome|crios|chromium|opr/|edg/|edge/") ~ "Safari",
+      str_detect(ua, "firefox|fxios") ~ "Firefox",
+      str_detect(ua, "msie|trident/") ~ "Internet Explorer",
+      str_detect(ua, "chrome|crios|chromium") ~ "Chrome",
+      TRUE ~ "Other"
+    )
+  ) %>%
+  group_by(browser) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  arrange(desc(request_count)) %>%
+  plot_ly(
+    x = ~browser,
+    y = ~request_count,
+    type = "bar",
+    marker = list(color = "steelblue"),
+    hovertemplate = "Browser: %{x}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(title = "Browser"),
+    yaxis = list(title = "Count")
+  )
+
+```
+
+## Most common referer domains
+
+```{r}
+data %>%
+  mutate(
+    referer_raw = `cs(Referer)`,
+    domain = ifelse(
+      is.na(referer_raw) | referer_raw == "-",
+      "None",
+      domain(referer_raw)
+    )
+  ) %>%
+  group_by(domain) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  arrange(desc(request_count)) %>%
+  plot_ly(
+    x = ~reorder(domain, request_count),
+    y = ~request_count,
+    type = "bar",
+    marker = list(color = "steelblue"),
+    hovertemplate = "Domain: %{x}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(title = "Domain"),
+    yaxis = list(title = "Count"),
+    bargap = 0.2
+  )
+
+```
+
+## Cache hit rate over time
+
+```{r}
+
+data %>%
+  mutate(
+    date = as.Date(datetime),
+    result_type = as.character(`x-edge-response-result-type`),
+    # anything that contains "hit" or "redirect" is considered a hit
+    is_hit = if_else(
+      str_detect(coalesce(result_type, ""), regex("hit|redirect", ignore_case = TRUE)),
+      TRUE, FALSE
+    )
+  ) %>%
+  group_by(date) %>%
+  summarise(
+    total = n(),
+    hits  = sum(is_hit, na.rm = TRUE),
+    cache_hit_pct = 100 * hits / total,
+    .groups = "drop"
+  ) %>%
+  arrange(date) %>%
+  plot_ly(
+    x = ~date,
+    y = ~cache_hit_pct,
+    type = "scatter",
+    mode = "lines+markers",
+    hovertemplate = "Date: %{x}<br>Cache hit: %{y:.1f}%<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Cache hit %", ticksuffix = "%")
+  )
+
+```
+
