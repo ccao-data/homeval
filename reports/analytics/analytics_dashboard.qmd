@@ -51,8 +51,6 @@ if (!file.exists(cache_file)) {
   message("Reading cached file")
   assessment_card <- read_parquet(cache_file)
 }
-
-
 ```
 
 ```{r}
@@ -139,9 +137,6 @@ cached_dates <- as.Date(na.omit(cached_dates))
 # Build the full sequence of dates you care about
 all_dates <- seq(baseline_date, today_local, by = "day")
 
-# Download plan:
-# - Always refresh today's file
-# - For other dates, only download if not cached yet
 dates_to_fetch <- c(
   setdiff(all_dates[all_dates != today_local], cached_dates),
   today_local
@@ -150,9 +145,6 @@ dates_to_fetch <- c(
 message("Dates to fetch (", length(dates_to_fetch), "): ",
         paste(format(dates_to_fetch), collapse = ", "))
 
-# ------------------------------
-# DOWNLOAD + CACHE
-# ------------------------------
 walk(dates_to_fetch, function(d) {
   out_file <- fs::path(out_dir, paste0("logs_", format(d), ".parquet"))
   message("Target file: ", fs::path_abs(out_file))
@@ -228,7 +220,12 @@ data <- logs %>%
   )
 ```
 
+
 ## Request count by class
+
+::: {.panel-tabset}
+
+### Overall
 
 NA Values are for requests that did not match a valid PIN
 
@@ -248,7 +245,6 @@ data %>%
     )
   ) %>%
   layout(
-    title = "Request Count by Class",
     xaxis = list(title = "Class"),
     yaxis = list(title = "Count"),
     showlegend = FALSE
@@ -256,7 +252,7 @@ data %>%
 
 ```
 
-# Request count by class over time (total)
+### Request count by class over time (total)
 
 NA class values are removed
 ```{r}
@@ -278,13 +274,14 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    title = "Request Count by Class Over Time",
     xaxis = list(title = "Date"),
     yaxis = list(title = "Count"),
     legend = list(title = list(text = "Class"))
   )
 
 ```
+
+### Request count by class over time (%)
 
 ```{r}
 data %>%
@@ -307,14 +304,20 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    title = "Request Count by Class Over Time (%)",
     xaxis = list(title = "Date"),
     yaxis = list(title = "Percentage", ticksuffix = "%"),
     legend = list(title = list(text = "Class"))
   )
 
 ```
-# Request count by extract year
+:::
+
+## Request count by year
+
+::: {.panel-tabset}
+
+### Overall
+
 ```{r}
 data %>%
   group_by(extract_year) %>%
@@ -334,7 +337,8 @@ data %>%
     yaxis = list(title = "Count")
   )
 ```
-## Request count by extract year over time (total)
+
+### Total Over Time
 
 ```{r}
 data %>%
@@ -359,7 +363,8 @@ data %>%
     legend = list(title = list(text = "Year"))
   )
 ```
-## Request count by extract year over time (%)
+
+### % By Year
 
 ```{r}
 data %>%
@@ -381,14 +386,20 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    title = "Request Count by Reassessment Year Over Time (%)",
     xaxis = list(title = "Date"),
     yaxis = list(title = "Percentage", ticksuffix = "%"),
     legend = list(title = list(text = "Year"))
   )
 ```
 
-# Request count by report eligibility
+:::
+
+## Request count by report eligibility
+
+::: {.panel-tabset}
+
+### Overall
+
 ```{r}
 # Do we want to include NA values here?
 data %>%
@@ -408,12 +419,11 @@ data %>%
     )
   ) %>%
   layout(
-    title = "Request Count by Report Eligibility",
     xaxis = list(title = "Eligibility"),
     yaxis = list(title = "Count")
   )
 ```
-## Request count by report eligibility reason
+### Type of Ineligibility Reason
 
 ```{r}
 data %>%
@@ -431,17 +441,15 @@ data %>%
     )
   ) %>%
   layout(
-    title = "Request Count by Report Eligibility Reason",
     xaxis = list(title = "Eligibility Reason"),
     yaxis = list(title = "Count")
   )
 ```
 
 
-##
+### Count of Ineligability by Time
 
 ```{r}
-
 data %>%
   filter(!is.na(reason_report_ineligible)) %>%
   mutate(date = as.Date(datetime)) %>%
@@ -456,15 +464,15 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    title = "Request Count by Report Eligibility Reason Over Time (Total)",
     xaxis = list(title = "Date"),
     yaxis = list(title = "Count"),
     legend = list(title = list(text = "Eligibility Reason"))
   )
 ```
 
-```{r}
+### % Over Time
 
+```{r}
 data %>%
   filter(!is.na(reason_report_ineligible)) %>%
   mutate(date = as.Date(datetime)) %>%
@@ -481,12 +489,12 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    title = "Request Count by Report Eligibility Reason Over Time (%)",
     xaxis = list(title = "Date"),
     yaxis = list(title = "Percentage", ticksuffix = "%"),
     legend = list(title = list(text = "Eligibility Reason"))
   )
 ```
+:::
 
 ```{r}
 df_counts <- data %>%
@@ -527,17 +535,24 @@ years <- sort(unique(df_counts$extract_year))
 
 ```
 
-## Request count by township and reassessment year {.tabset}
+## Request count by township and reassessment year
+
+::: {.panel-tabset}
+
 ### 2024
 ```{r}
 plot_township_year(df_counts, "2024")
 ```
 
+### 2025
+
 ```{r}
 plot_township_year(df_counts, "2025")
 ```
+:::
 
 ## Distribution of HTTP Response Status Codes Over Time
+
 ```{r}
 data %>%
   mutate(
@@ -589,21 +604,30 @@ data %>%
     )
   )
 ```
+
+## Most common browsers
+
 ```{r}
 data %>%
   mutate(
-    ua_raw = `cs(User-Agent)`,
-    ua     = str_to_lower(ua_raw),
+    ua     = str_to_lower(`cs(User-Agent)`),
     browser = case_when(
-      str_detect(ua, "bot|crawler|spider|slurp|baiduspider|ahrefs|semrush|facebookexternalhit|bingpreview") ~ "Bot / Crawler",
-      str_detect(ua, "edg/|edge/") ~ "Microsoft Edge",
-      str_detect(ua, "opr/|opera") ~ "Opera",
-      str_detect(ua, "samsungbrowser") ~ "Samsung Internet",
+      str_detect(ua, "bot") ~ "Bot",
+      str_detect(ua, "bing") ~ "Bing",
+      str_detect(ua, "edg|edge") ~ "Microsoft Edge",
+      str_detect(ua, "opr|opera") ~ "Opera",
+      str_detect(ua, "samsung") ~ "Samsung Internet",
       str_detect(ua, "brave") ~ "Brave",
-      str_detect(ua, "safari") & !str_detect(ua, "chrome|crios|chromium|opr/|edg/|edge/") ~ "Safari",
+      str_detect(ua, "safari") ~ "Safari",
       str_detect(ua, "firefox|fxios") ~ "Firefox",
-      str_detect(ua, "msie|trident/") ~ "Internet Explorer",
-      str_detect(ua, "chrome|crios|chromium") ~ "Chrome",
+      str_detect(ua, "msie|trident") ~ "Internet Explorer",
+      str_detect(ua, "chrome|chromium") ~ "Chrome",
+      str_detect(ua, "mozilla") ~ "Mozilla",
+      str_detect(ua, "apple") ~ "Apple",
+      str_detect(ua, "duck") ~ "DuckDuckGo",
+      str_detect(ua, "asana") ~ "Asana",
+      str_detect(ua, "whatsapp") ~ "WhatsApp",
+      str_detect(ua, "facebook") ~ "Facebook",
       TRUE ~ "Other"
     )
   ) %>%
