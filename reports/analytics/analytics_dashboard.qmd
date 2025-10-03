@@ -189,8 +189,10 @@ fields <- c(
   "sc-content-type", "sc-content-len"
 )
 
+window_secs <- 1
+
 data <- logs %>%
-  mutate(parsed = map(message, ~ {
+  mutate(parsed = purrr::map(message, ~ {
     val <- tryCatch(jsonlite::fromJSON(.x, simplifyVector = TRUE),
       error = function(e) NULL
     )
@@ -199,15 +201,11 @@ data <- logs %>%
     }
     out <- setNames(vector("list", length(fields)), fields)
     for (nm in fields) {
-      out[[nm]] <- if (nm %in% names(val)) {
-        as.character(val[[nm]])
-      } else {
-        NA_character_
-      }
+      out[[nm]] <-
+        if (nm %in% names(val)) as.character(val[[nm]]) else NA_character_
     }
     out
   })) %>%
-  # Remove any existing columns that would clash with parsed names
   select(-any_of(fields)) %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
   mutate(
@@ -218,20 +216,50 @@ data <- logs %>%
     extract_year = coalesce(
       str_extract(`cs(Referer)`, "(?<=/)(202[0-9])(?=/)"),
       str_extract(`cs-uri-stem`, "(?<=/)(202[0-9])(?=/)")
-    )
+    ),
+    extract_year = as.integer(extract_year),
+    datetime_sec = floor_date(datetime, "second")
   ) %>%
+  arrange(datetime_sec) %>%
+  # Cluster ID is a way to identify duplicate requests within the same query.
+  # We build it on one second intervals.
+  # When there are two pins, we separaate them.
+  # For these, we remove the NA observations since we don't know which category
+  # they belong to. Otherwise we leave in NA pins for relevant metadata.
+  mutate(
+    delta_s = as.numeric(datetime_sec - lag(datetime_sec),
+      units = "secs"
+    ),
+    cluster_id = cumsum(is.na(delta_s) | delta_s > window_secs),
+    extract_year = as.character(extract_year)
+  ) %>%
+  # Flag clusters with >1 distinct (non-NA) pin
+  group_by(cluster_id) %>%
+  mutate(
+    n_distinct_pin = n_distinct(pin, na.rm = TRUE),
+    is_multi_pin   = n_distinct_pin > 1L
+  ) %>%
+  ungroup() %>%
+  # Drop NA pins only if multi-pin
+  filter(!(is_multi_pin & is.na(pin))) %>%
+  # De-dupe the cluster IDs
+  mutate(
+    cluster_id = if_else(is_multi_pin,
+      paste(cluster_id, pin, sep = "_"),
+      as.character(cluster_id)
+    ),
+    cluster_id = as.integer(factor(cluster_id, levels = unique(cluster_id)))
+  ) %>%
+  select(-n_distinct_pin, -is_multi_pin) %>%
+  ungroup() %>%
   left_join(
     assessment_card %>%
-      # Select the most recent year. We can filter based on matching triad to
-      # assessment year, but there were also observations for each of the three
-      # triads.
-      filter(assessment_year == 2025) %>%
       select(
         meta_pin, char_class, assessment_year,
         meta_triad_name, meta_card_num, is_report_eligible,
         reason_report_ineligible, meta_township_name
       ),
-    by = c("pin" = "meta_pin")
+    by = c("pin" = "meta_pin", "extract_year" = "assessment_year")
   )
 ```
 
@@ -246,10 +274,23 @@ data <- logs %>%
 NA Values are for requests that did not match a valid PIN
 
 ```{r}
-data %>%
-  mutate(char_class = ifelse(is.na(char_class), "NA",
-    as.character(char_class)
-  )) %>%
+data_class <- data %>%
+  group_by(cluster_id) %>%
+  mutate(
+    # check if this group has any non-NA char_class.
+    # This will clear out duplicated queries where pin
+    # isn't identified within some of the requests.
+    has_non_na = any(!is.na(char_class))
+  ) %>%
+  # drop NA if group has other classes.
+  filter(!(has_non_na & is.na(char_class))) %>%
+  ungroup() %>%
+  mutate(
+    char_class = ifelse(is.na(char_class), "NA", as.character(char_class))
+  ) %>%
+  distinct(datetime, pin, char_class, .keep_all = TRUE)
+
+data_class %>%
   group_by(char_class) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
@@ -269,13 +310,12 @@ data %>%
   )
 ```
 
+
 ### Count Over Time
 
 NA class values are removed
 ```{r}
-data %>%
-  filter(!is.na(char_class)) %>%
-  mutate(date = as.Date(datetime)) %>%
+data_class %>%
   group_by(date, char_class) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
@@ -300,9 +340,9 @@ data %>%
 ### % Over Time
 
 ```{r}
-data %>%
+data_class %>%
   mutate(date = as.Date(datetime)) %>%
-  filter(!is.na(char_class)) %>%
+  distinct(datetime, pin, char_class, .keep_all = TRUE) %>%
   group_by(date, char_class) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   group_by(date) %>%
@@ -329,7 +369,6 @@ data %>%
 
 ---
 
-
 ## Request Count by Extract Year
 
 Extract year refers to the year the property was re-assessed. This can be the same as the query year, but does not have to be.
@@ -339,7 +378,15 @@ Extract year refers to the year the property was re-assessed. This can be the sa
 ### Overall
 
 ```{r}
-data %>%
+# Get the count of unique clusters by extract year
+data_extract_year <- data %>%
+  # Keep date for following charts, and they are
+  # already grouped within the cluster
+  group_by(cluster_id, extract_year, date) %>%
+  summarise(n = n()) %>%
+  ungroup()
+
+data_extract_year %>%
   group_by(extract_year) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
@@ -361,8 +408,9 @@ data %>%
 ### Total Over Time
 
 ```{r}
-data %>%
+data_extract_year %>%
   filter(!is.na(extract_year)) %>%
+  # create date from datetime
   group_by(date, extract_year) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
@@ -423,13 +471,19 @@ data %>%
 ### Overall
 
 ```{r}
-# Do we want to include NA values here?
 data %>%
-  mutate(
-    eligibility = ifelse(is_report_eligible == TRUE, "Eligible", "Not Eligible")
+  group_by(cluster_id) %>%
+  summarise(
+    # We assume if that any request in the cluster is eligible, the whole
+    # cluster is eligible. It also removes NA values.
+    eligibility = if (any(is_report_eligible, na.rm = TRUE)) {
+      "Eligible"
+    } else {
+      "Not Eligible"
+    },
+    .groups = "drop"
   ) %>%
-  group_by(eligibility) %>%
-  summarise(request_count = n(), .groups = "drop") %>%
+  count(eligibility, name = "request_count") %>%
   plot_ly(
     x = ~eligibility,
     y = ~request_count,
@@ -451,8 +505,9 @@ data %>%
 ```{r}
 data %>%
   filter(!is.na(reason_report_ineligible)) %>%
-  group_by(reason_report_ineligible) %>%
-  summarise(request_count = n(), .groups = "drop") %>%
+  # This will allow for more than 1 reason for a cluster to be ineligible
+  distinct(cluster_id, reason_report_ineligible) %>%
+  count(reason_report_ineligible, name = "request_count") %>%
   plot_ly(
     x = ~reason_report_ineligible,
     y = ~request_count,
@@ -474,16 +529,18 @@ data %>%
 ```{r}
 data %>%
   filter(!is.na(reason_report_ineligible)) %>%
-  mutate(date = as.Date(datetime)) %>%
-  group_by(date, reason_report_ineligible) %>%
-  summarise(request_count = n(), .groups = "drop") %>%
+  distinct(cluster_id, reason_report_ineligible, date) %>%
+  count(reason_report_ineligible, date, name = "request_count") %>%
   plot_ly(
     x = ~date,
     y = ~request_count,
     color = ~reason_report_ineligible,
     type = "bar",
-    hovertemplate = "Date: %{x}<br>Reason:
-    %{fullData.name}<br>Count: %{y}<extra></extra>"
+    hovertemplate = paste(
+      "Date: %{x}<br>",
+      "Reason: %{fullData.name}<br>",
+      "Count: %{y}<extra></extra>"
+    )
   ) %>%
   layout(
     barmode = "stack",
@@ -498,11 +555,13 @@ data %>%
 ```{r}
 data %>%
   filter(!is.na(reason_report_ineligible)) %>%
-  mutate(date = as.Date(datetime)) %>%
-  group_by(date, reason_report_ineligible) %>%
-  summarise(request_count = n(), .groups = "drop") %>%
+  distinct(cluster_id, reason_report_ineligible, date) %>%
+  count(date, reason_report_ineligible, name = "request_count") %>%
+  complete(date, reason_report_ineligible, fill = list(request_count = 0)) %>%
   group_by(date) %>%
-  mutate(pct = request_count / sum(request_count) * 100) %>%
+  mutate(pct = 100 * request_count / sum(request_count)) %>%
+  ungroup() %>%
+  arrange(date) %>%
   plot_ly(
     x = ~date,
     y = ~pct,
@@ -529,6 +588,7 @@ df_counts <- data %>%
     triad = meta_triad_name
   ) %>%
   filter(!is.na(township), !is.na(extract_year)) %>%
+  distinct(cluster_id, extract_year, township, triad, township) %>%
   group_by(extract_year, triad, township) %>%
   summarise(request_count = n(), .groups = "drop")
 
@@ -583,24 +643,24 @@ plot_township_year(df_counts, "2025")
 ```{r}
 data %>%
   mutate(
-    date = as.Date(datetime),
+    date   = as.Date(datetime),
     status = ifelse(is.na(`sc-status`), "Unknown", as.character(`sc-status`))
   ) %>%
-  group_by(date, status) %>%
-  summarise(request_count = n(), .groups = "drop") %>%
+  distinct(date, cluster_id, status) %>%
+  count(date, status, name = "cluster_count") %>%
   arrange(date, status) %>%
   plot_ly(
     x = ~date,
-    y = ~request_count,
+    y = ~cluster_count,
     color = ~status,
     type = "scatter",
     mode = "lines+markers",
     hovertemplate = "Date: %{x}<br>Status:
-    %{fullData.name}<br>Count: %{y}<extra></extra>"
+    %{fullData.name}<br>Clusters: %{y}<extra></extra>"
   ) %>%
   layout(
     xaxis = list(title = "Date"),
-    yaxis = list(title = "Count"),
+    yaxis = list(title = "Clusters"),
     legend = list(title = list(text = "Status"))
   )
 ```
@@ -611,6 +671,7 @@ data %>%
 ```{r}
 data %>%
   # Keep only errors (not 2xx or 3xx)
+  # We don't filter distinct cluster here since we want to see all errors
   filter(!is.na(`sc-status`), !substr(`sc-status`, 1, 1) %in% c("2", "3")) %>%
   mutate(
     timestamp = as.POSIXct(datetime),
@@ -691,6 +752,7 @@ data %>%
       domain(referer_raw)
     )
   ) %>%
+  distinct(cluster_id, domain) %>% # one row per cluster/domain
   group_by(domain) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   arrange(desc(request_count)) %>%
@@ -715,21 +777,19 @@ data %>%
 ```{r}
 data %>%
   mutate(
-    date = as.Date(datetime),
     result_type = as.character(`x-edge-response-result-type`),
-    # anything that contains "hit" or "redirect" is considered a hit
-    is_hit = if_else(
-      str_detect(coalesce(result_type, ""), regex("hit|redirect",
-        ignore_case = TRUE
-      )),
-      TRUE, FALSE
+    is_hit = str_detect(
+      coalesce(result_type, ""),
+      regex("hit|redirect", ignore_case = TRUE)
     )
   ) %>%
+  group_by(date, cluster_id) %>%
+  summarise(cluster_hit = any(is_hit, na.rm = TRUE), .groups = "drop") %>%
   group_by(date) %>%
   summarise(
-    total = n(),
-    hits = sum(is_hit, na.rm = TRUE),
-    cache_hit_pct = 100 * hits / total,
+    total_clusters = n(),
+    hits = sum(cluster_hit),
+    cache_hit_pct = 100 * hits / total_clusters,
     .groups = "drop"
   ) %>%
   arrange(date) %>%
