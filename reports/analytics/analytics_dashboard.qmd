@@ -378,7 +378,7 @@ data_class %>%
 
 ## Request Count by Extract Year
 
-Extract year refers to the year the property was re-assessed. This can be the same as the query year, but does not have to be.
+Extract year refers to the year which the user queried the data for.
 
 ::: {.panel-tabset}
 
