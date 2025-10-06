@@ -481,13 +481,11 @@ data %>%
 data %>%
   group_by(cluster_id) %>%
   summarise(
-    # We assume if that any request in the cluster is eligible, the whole
-    # cluster is eligible. It also removes NA values.
-    eligibility = if (any(is_report_eligible, na.rm = TRUE)) {
-      "Eligible"
-    } else {
-      "Not Eligible"
-    },
+    eligibility = case_when(
+      any(is_report_eligible == TRUE, na.rm = TRUE) ~ "Eligible",
+      any(is_report_eligible == FALSE, na.rm = TRUE) ~ "Not Eligible",
+      all(is.na(is_report_eligible)) ~ "N/A"
+    ),
     .groups = "drop"
   ) %>%
   count(eligibility, name = "request_count") %>%
@@ -495,7 +493,7 @@ data %>%
     x = ~eligibility,
     y = ~request_count,
     type = "bar",
-    marker = list(color = c("steelblue", "tomato")),
+    marker = list(color = c("steelblue", "tomato", "grey")),
     hovertemplate = paste(
       "Eligibility: %{x}<br>",
       "Count: %{y}<extra></extra>"
@@ -508,6 +506,8 @@ data %>%
 ```
 
 ### Type of Ineligibility Reason
+
+This allows for duplicate reasons if the same query is deemed ineligible.
 
 ```{r}
 data %>%
@@ -732,7 +732,8 @@ data %>%
   rename(browser = `ua.family`) %>%
   mutate(browser = normalize_browser(browser)) %>%
   distinct(date, cluster_id, browser) %>%
-  count(browser, name = "request_count", sort = TRUE) %>%
+  count(browser, name = "request_count") %>%
+  mutate(browser = fct_reorder(browser, request_count)) %>%
   plot_ly(
     x = ~browser, y = ~request_count,
     type = "bar",
