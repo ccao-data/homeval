@@ -144,7 +144,7 @@ cached_dates <- as.Date(na.omit(cached_dates))
 all_dates <- seq(baseline_date, today_local, by = "day")
 
 dates_to_fetch <- c(
-  # Always call todays date
+  # Always call today's date
   setdiff(all_dates[all_dates != today_local], cached_dates),
   today_local
 ) %>% sort()
@@ -228,7 +228,7 @@ data <- logs %>%
   arrange(datetime_sec) %>%
   # Cluster ID is a way to identify duplicate requests within the same query.
   # We build it on one second intervals.
-  # When there are two pins, we separaate them.
+  # When there are two pins, we separate them.
   # For these, we remove the NA observations since we don't know which category
   # they belong to. Otherwise we leave in NA pins for relevant metadata.
   mutate(
