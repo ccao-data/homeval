@@ -24,6 +24,7 @@ library(purrr)
 library(tibble)
 library(tidyverse)
 library(urltools)
+library(uaparserjs)
 ```
 
 
@@ -699,35 +700,34 @@ data %>%
 ## Most Common Browsers
 
 ```{r}
+normalize_browser <- function(x) {
+  x <- str_to_lower(str_squish(x))
+  case_when(
+    str_detect(x, "chrome") ~ "Chrome",
+    str_detect(x, "edge") ~ "Edge",
+    str_detect(x, "firefox") ~ "Firefox",
+    str_detect(x, "opera") ~ "Opera",
+    str_detect(x, "safari") ~ "Safari",
+    str_detect(x, "samsung") ~ "Samsung",
+    str_detect(x, "internet explorer") ~ "Internet Explorer",
+    str_detect(x, "whatsapp") ~ "WhatsApp",
+    str_detect(x, "facebook") ~ "Facebook",
+    str_detect(x, "slack") ~ "Slack",
+    str_detect(x, "linkedin") ~ "LinkedIn",
+    str_detect(x, "apple") ~ "Apple",
+    TRUE ~ str_to_title(x)
+  )
+}
+
 data %>%
-  mutate(
-    ua = str_to_lower(`cs(User-Agent)`),
-    browser = case_when(
-      str_detect(ua, "bot") ~ "Bot",
-      str_detect(ua, "bing") ~ "Bing",
-      str_detect(ua, "edg|edge") ~ "Microsoft Edge",
-      str_detect(ua, "opr|opera") ~ "Opera",
-      str_detect(ua, "samsung") ~ "Samsung Internet",
-      str_detect(ua, "brave") ~ "Brave",
-      str_detect(ua, "safari") ~ "Safari",
-      str_detect(ua, "firefox|fxios") ~ "Firefox",
-      str_detect(ua, "msie|trident") ~ "Internet Explorer",
-      str_detect(ua, "chrome|chromium") ~ "Chrome",
-      str_detect(ua, "mozilla") ~ "Mozilla",
-      str_detect(ua, "apple") ~ "Apple",
-      str_detect(ua, "duck") ~ "DuckDuckGo",
-      str_detect(ua, "asana") ~ "Asana",
-      str_detect(ua, "whatsapp") ~ "WhatsApp",
-      str_detect(ua, "facebook") ~ "Facebook",
-      TRUE ~ "Other"
-    )
-  ) %>%
-  group_by(browser) %>%
-  summarise(request_count = n(), .groups = "drop") %>%
-  arrange(desc(request_count)) %>%
+  mutate(parsed = ua_parse(`cs(User-Agent)`)) %>%
+  unnest_wider(parsed) %>%
+  rename(browser = `ua.family`) %>%
+  mutate(browser = normalize_browser(browser)) %>%
+  distinct(date, cluster_id, browser) %>%
+  count(browser, name = "request_count", sort = TRUE) %>%
   plot_ly(
-    x = ~browser,
-    y = ~request_count,
+    x = ~browser, y = ~request_count,
     type = "bar",
     marker = list(color = "steelblue"),
     hovertemplate = "Browser: %{x}<br>Count: %{y}<extra></extra>"
@@ -805,4 +805,3 @@ data %>%
     yaxis = list(title = "Cache hit %", ticksuffix = "%")
   )
 ```
-
