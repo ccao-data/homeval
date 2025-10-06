@@ -69,6 +69,8 @@ to_epoch_ms_utc <- function(x_dt_local) {
 }
 
 fetch_events_for_day <- function(date_local) {
+  # Dates are queried in epoch time and converted to local
+  # time to make data readable
   start_local <- as.POSIXct(date_local, tz = tz_local)
   end_local <- start_local + days(1)
 
@@ -130,6 +132,7 @@ cached_files <- dir_ls(out_dir,
   regexp = "logs_\\d{4}-\\d{2}-\\d{2}\\.parquet$",
   type = "file"
 )
+# Match dates in cached filenames
 cached_dates <- str_match(
   basename(cached_files),
   "logs_(\\d{4}-\\d{2}-\\d{2})\\.parquet"
@@ -137,10 +140,11 @@ cached_dates <- str_match(
 
 cached_dates <- as.Date(na.omit(cached_dates))
 
-# Build the full sequence of dates you care about
+# Build the full sequence of dates
 all_dates <- seq(baseline_date, today_local, by = "day")
 
 dates_to_fetch <- c(
+  # Always call todays date
   setdiff(all_dates[all_dates != today_local], cached_dates),
   today_local
 ) %>% sort()
@@ -340,6 +344,8 @@ data_class %>%
 
 ### % Over Time
 
+NA class values are removed
+
 ```{r}
 data_class %>%
   mutate(date = as.Date(datetime)) %>%
@@ -507,6 +513,7 @@ data %>%
 data %>%
   filter(!is.na(reason_report_ineligible)) %>%
   # This will allow for more than 1 reason for a cluster to be ineligible
+  # to return multiple reasons
   distinct(cluster_id, reason_report_ineligible) %>%
   count(reason_report_ineligible, name = "request_count") %>%
   plot_ly(
