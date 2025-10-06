@@ -215,12 +215,12 @@ data <- logs %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
   mutate(
     pin = coalesce(
-      str_extract(`cs(Referer)`, "\\d{14}(?=\\.html)"),
-      str_extract(`cs-uri-stem`, "\\d{14}(?=\\.html)")
+      str_extract(`cs-uri-stem`, "\\d{14}(?=\\.html)"),
+      str_extract(`cs(Referer)`, "\\d{14}(?=\\.html)")
     ),
     extract_year = coalesce(
-      str_extract(`cs(Referer)`, "(?<=/)(202[0-9])(?=/)"),
-      str_extract(`cs-uri-stem`, "(?<=/)(202[0-9])(?=/)")
+      str_extract(`cs-uri-stem`, "(?<=/)(202[0-9])(?=/)"),
+      str_extract(`cs(Referer)`, "(?<=/)(202[0-9])(?=/)")
     ),
     extract_year = as.integer(extract_year),
     datetime_sec = floor_date(datetime, "second")
