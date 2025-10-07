@@ -1,4 +1,4 @@
-name: generate-pinval
+name: generate-homeval
 
 on:
   workflow_dispatch:
@@ -109,16 +109,16 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: scripts/generate_pinval/uv.lock
+          cache-dependency-glob: scripts/generate_homeval/uv.lock
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version-file: scripts/generate_pinval/.python-version
+          python-version-file: scripts/generate_homeval/.python-version
 
       - name: Install Python requirements
         run: uv pip install .
-        working-directory: scripts/generate_pinval
+        working-directory: scripts/generate_homeval
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -138,7 +138,7 @@ jobs:
           if [ "${{ inputs.eligible-only }}" = "true" ]; then
             ELIG_FLAG="--eligible-only"
           fi
-          python3 scripts/generate_pinval/resolve_model_metadata.py \
+          python3 scripts/generate_homeval/resolve_model_metadata.py \
             --year "${{ inputs.year }}" \
             --run-id "${{ inputs.run_id }}" \
             --pin "${PINS[@]}" \
@@ -166,9 +166,9 @@ jobs:
           echo "$DISTRIBUTION_ID_STR" >> "$GITHUB_OUTPUT"
 
 ###############################################################################
-# Generate PINVAL reports for a triad or explicit PINs
+# Generate HomeVal reports for a triad or explicit PINs
 ###############################################################################
-  generate-pinval:
+  generate-homeval:
     needs: setup
     runs-on: ubuntu-latest
     strategy:
@@ -190,16 +190,16 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: scripts/generate_pinval/uv.lock
+          cache-dependency-glob: scripts/generate_homeval/uv.lock
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version-file: scripts/generate_pinval/.python-version
+          python-version-file: scripts/generate_homeval/.python-version
 
       - name: Install Python requirements
         run: uv pip install .
-        working-directory: scripts/generate_pinval
+        working-directory: scripts/generate_homeval
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -241,7 +241,7 @@ jobs:
           # Unquoted neighborhood flag is intentional in this call, since we
           # want this to expand to nothing (rather than an empty string) if
           # the variable is empty
-          python3 scripts/generate_pinval/generate_pinval.py \
+          python3 scripts/generate_homeval/generate_homeval.py \
             --run-id "$RUN_ID" \
             --township "$TOWNSHIP" \
             --pin "${PINS[@]}" \
@@ -272,7 +272,7 @@ jobs:
   notify:
     needs:
       - setup
-      - generate-pinval
+      - generate-homeval
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -330,9 +330,9 @@ jobs:
           BUCKET: ${{ needs.setup.outputs.bucket }}
         run: |
           read -ra PINS <<< "${{ inputs.pins }}"
-          SUBJECT="PINVAL reports ready for run-id $RUN_ID"
+          SUBJECT="HomeVal reports ready for run-id $RUN_ID"
           MESSAGE=$(cat <<EOF
-          Your requested PINVAL reports have been generated.
+          Your requested HomeVal reports have been generated.
 
           Assessment year: $YEAR
           Run-ID: $RUN_ID
