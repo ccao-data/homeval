@@ -1,5 +1,5 @@
 ---
-title: "Home-Val Analytics"
+title: "HomeVal Analytics"
 execute:
   echo: false
   warning: false
