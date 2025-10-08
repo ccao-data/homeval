@@ -215,7 +215,7 @@ data <- logs %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
   mutate(
     pin = coalesce(
-      str_extract(`cs-uri-stem`, "\\d{14}(?=\\.html)"),
+      str_extract(`cs-uri-stem`, "(?<=/)\\d{14}(?=\\.html)"),
       str_extract(`cs(Referer)`, "\\d{14}(?=\\.html)")
     ),
     extract_year = coalesce(
