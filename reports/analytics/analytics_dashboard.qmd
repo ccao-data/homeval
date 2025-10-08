@@ -125,7 +125,7 @@ fetch_events_for_day <- function(date_local) {
 }
 
 # Today in local time
-today_local <- as.Date(with_tz(Sys.time(), tz_local))
+today_local <- today(tzone = tz_local)
 
 # Look for already-cached files like logs_YYYY-MM-DD.parquet
 cached_files <- dir_ls(out_dir,
