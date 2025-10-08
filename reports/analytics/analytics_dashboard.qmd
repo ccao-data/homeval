@@ -198,12 +198,8 @@ window_secs <- 1
 
 data <- logs %>%
   mutate(parsed = purrr::map(message, ~ {
-    val <- tryCatch(jsonlite::fromJSON(.x, simplifyVector = TRUE),
-      error = function(e) NULL
-    )
-    if (is.null(val)) {
-      return(rep(NA_character_, length(fields)))
-    }
+    val <- jsonlite::fromJSON(.x, simplifyVector = TRUE)
+    out <- setNames(vector("list", length(fields)), fields)
     out <- setNames(vector("list", length(fields)), fields)
     for (nm in fields) {
       out[[nm]] <-
