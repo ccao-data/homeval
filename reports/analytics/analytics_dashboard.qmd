@@ -32,7 +32,7 @@ library(uaparserjs)
 conn <- dbConnect(noctua::athena())
 
 cache_dir <- "data/assessment_card"
-dir.create(cache_dir, showWarnings = FALSE)
+dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 
 cache_file <- file.path(cache_dir, "assessment_card.parquet")
 
