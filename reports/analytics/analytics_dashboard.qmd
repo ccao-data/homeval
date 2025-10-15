@@ -121,7 +121,7 @@ fetch_events_for_day <- function(date_local) {
       datetime = with_tz(as_datetime(timestamp / 1000, tz = "UTC"), tz_local),
       date     = as.Date(datetime)
     )
-  }
+}
 
 # Today in local time
 today_local <- today(tzone = tz_local)
@@ -226,7 +226,7 @@ data <- logs %>%
     # for the static assets.
     # For the rest of the document, we will use the value of 'Query'
     # when trying to identify a unique query. We keep the static in
-    # to see how many static assets are hit and we keep in Other 
+    # to see how many static assets are hit and we keep in Other
     # to look for bot requests.
     uri_indicator = case_when(
       str_detect(`cs-uri-stem`, "^/202[0-9]/") ~ "Query",
@@ -244,7 +244,6 @@ data <- logs %>%
       ),
     by = c("pin" = "meta_pin", "extract_year" = "assessment_year")
   )
-
 ```
 
 ---
@@ -304,7 +303,13 @@ data_class %>%
   ) %>%
   layout(
     barmode = "stack",
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Count"),
     legend = list(title = list(text = "Class"))
   )
@@ -335,7 +340,13 @@ data_class %>%
   ) %>%
   layout(
     barmode = "stack",
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Percentage", ticksuffix = "%"),
     legend = list(title = list(text = "Class"))
   )
@@ -382,8 +393,10 @@ data %>%
 
 ```{r}
 data %>%
-  filter(!is.na(extract_year),
-                uri_indicator == "Query") %>%
+  filter(
+    !is.na(extract_year),
+    uri_indicator == "Query"
+  ) %>%
   group_by(date, extract_year) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
@@ -399,7 +412,13 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Count"),
     legend = list(title = list(text = "Year"))
   )
@@ -409,8 +428,10 @@ data %>%
 
 ```{r}
 data %>%
-  filter(!is.na(extract_year),
-                uri_indicator == "Query") %>%
+  filter(
+    !is.na(extract_year),
+    uri_indicator == "Query"
+  ) %>%
   group_by(date, extract_year) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   group_by(date) %>%
@@ -428,7 +449,13 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Percentage", ticksuffix = "%"),
     legend = list(title = list(text = "Year"))
   )
@@ -477,8 +504,10 @@ This allows for duplicate reasons if the same query is deemed ineligible.
 
 ```{r}
 data %>%
-  filter(!is.na(reason_report_ineligible),
-                uri_indicator == "Query") %>%
+  filter(
+    !is.na(reason_report_ineligible),
+    uri_indicator == "Query"
+  ) %>%
   # This will allow for more than 1 reason for a cluster to be ineligible
   # to return multiple reasons
   count(reason_report_ineligible, name = "request_count") %>%
@@ -502,8 +531,10 @@ data %>%
 
 ```{r}
 data %>%
-  filter(!is.na(reason_report_ineligible),
-         uri_indicator == "Query") %>%
+  filter(
+    !is.na(reason_report_ineligible),
+    uri_indicator == "Query"
+  ) %>%
   count(reason_report_ineligible, date, name = "request_count") %>%
   plot_ly(
     x = ~date,
@@ -518,7 +549,13 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Count"),
     legend = list(title = list(text = "Eligibility Reason"))
   )
@@ -528,8 +565,10 @@ data %>%
 
 ```{r}
 data %>%
-  filter(!is.na(reason_report_ineligible),
-         uri_indicator == "Query") %>%
+  filter(
+    !is.na(reason_report_ineligible),
+    uri_indicator == "Query"
+  ) %>%
   count(date, reason_report_ineligible, name = "request_count") %>%
   complete(date, reason_report_ineligible, fill = list(request_count = 0)) %>%
   group_by(date) %>%
@@ -546,7 +585,13 @@ data %>%
   ) %>%
   layout(
     barmode = "stack",
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Percentage", ticksuffix = "%"),
     legend = list(title = list(text = "Eligibility Reason"))
   )
@@ -637,7 +682,13 @@ data %>%
     %{fullData.name}<br>Count: %{y}<extra></extra>"
   ) %>%
   layout(
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Count"),
     legend = list(title = list(text = "Status"))
   )
@@ -663,7 +714,13 @@ data %>%
     %{fullData.name}<br>Count: %{y}<extra></extra>"
   ) %>%
   layout(
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Count"),
     legend = list(title = list(text = "Status"))
   )
@@ -749,7 +806,6 @@ data %>%
 ### Including Static Objects
 
 ```{r}
-
 data %>%
   mutate(parsed = ua_parse(`cs(User-Agent)`)) %>%
   unnest_wider(parsed) %>%
@@ -840,11 +896,11 @@ data %>%
 
 ## Cache Hit Rate over Time
 
-```{r}
-library(dplyr)
-library(plotly)
-library(stringr)
+::: {.panel-tabset}
 
+### By Query
+
+```{r}
 data %>%
   filter(uri_indicator == "Query") %>%
   mutate(
@@ -869,8 +925,51 @@ data %>%
     hovertemplate = "Date: %{x}<br>Cache hit: %{y:.1f}%<extra></extra>"
   ) %>%
   layout(
-    xaxis = list(title = "Date"),
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
     yaxis = list(title = "Cache hit %", ticksuffix = "%")
   )
-
 ```
+
+### Including Static Objects
+
+```{r}
+data %>%
+  mutate(
+    result_type = as.character(`x-edge-response-result-type`),
+    is_hit = str_detect(
+      coalesce(result_type, ""),
+      regex("hit|redirect", ignore_case = TRUE)
+    )
+  ) %>%
+  group_by(date) %>%
+  summarise(
+    count = n(),
+    cache_hit_pct = 100 * sum(is_hit, na.rm = TRUE) / count,
+    .groups = "drop"
+  ) %>%
+  arrange(date) %>%
+  plot_ly(
+    x = ~date,
+    y = ~cache_hit_pct,
+    type = "scatter",
+    mode = "lines+markers",
+    hovertemplate = "Date: %{x}<br>Cache hit: %{y:.1f}%<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(
+      title = "Date",
+      nticks = 10,
+      tickformat = "%b %d",
+      automargin = TRUE,
+      tickangle = 45
+    ),
+    yaxis = list(title = "Cache hit %", ticksuffix = "%")
+  )
+```
+
