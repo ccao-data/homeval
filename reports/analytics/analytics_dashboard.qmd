@@ -120,9 +120,8 @@ fetch_events_for_day <- function(date_local) {
       # CloudWatch timestamps are epoch ms in UTC
       datetime = with_tz(as_datetime(timestamp / 1000, tz = "UTC"), tz_local),
       date     = as.Date(datetime)
-    ) %>%
-    filter(date == date_local)
-}
+    )
+  }
 
 # Today in local time
 today_local <- today(tzone = tz_local)
@@ -164,16 +163,20 @@ walk(dates_to_fetch, function(d) {
   }
 
   message("Fetching ", format(d), " ...")
-  df <- tryCatch(fetch_events_for_day(d), error = function(e) {
-    warning("Failed to fetch ", format(d), ": ", conditionMessage(e))
-    tibble::tibble()
-  })
+  df <- tryCatch(
+    fetch_events_for_day(d),
+    error = function(e) {
+      warning("Failed to fetch ", format(d), ": ", conditionMessage(e))
+      tibble::tibble()
+    }
+  )
 
   arrow::write_parquet(df, out_file)
   message("Wrote ", nrow(df), " events to ", fs::path_abs(out_file))
   stopifnot(fs::file_exists(out_file))
   message("Verified exists: ", as.character(fs::file_size(out_file)), " bytes")
 })
+
 
 logs <- fs::dir_ls(
   out_dir,
@@ -194,8 +197,6 @@ fields <- c(
   "sc-content-type", "sc-content-len"
 )
 
-window_secs <- 1
-
 data <- logs %>%
   mutate(parsed = purrr::map(message, ~ {
     val <- jsonlite::fromJSON(.x, simplifyVector = TRUE)
@@ -208,6 +209,8 @@ data <- logs %>%
     out
   })) %>%
   select(-any_of(fields)) %>%
+  # There are duplicate messages. This keeps one per query.
+  distinct(message, .keep_all = TRUE) %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
   mutate(
     pin = coalesce(
@@ -219,42 +222,21 @@ data <- logs %>%
       str_extract(`cs(Referer)`, "(?<=/)(202[0-9])(?=/)")
     ),
     extract_year = as.integer(extract_year),
-    datetime_sec = floor_date(datetime, "second")
-  ) %>%
-  arrange(datetime_sec) %>%
-  # Cluster ID is a way to identify duplicate requests within the same query.
-  # We build it on one second intervals.
-  # When there are two pins, we separate them.
-  # For these, we remove the NA observations since we don't know which category
-  # they belong to. Otherwise we leave in NA pins for relevant metadata.
-  mutate(
-    delta_s = as.numeric(datetime_sec - lag(datetime_sec),
-      units = "secs"
+    # This is an indiicator for the main query, or the query
+    # for the static assets.
+    # For the rest of the document, we will use the value of 'Query'
+    # when trying to identify a unique query. We keep the static in
+    # to see how many static assets are hit and we keep in Other 
+    # to look for bot requests.
+    uri_indicator = case_when(
+      str_detect(`cs-uri-stem`, "^/202[0-9]/") ~ "Query",
+      str_detect(`cs-uri-stem`, "^/static/") ~ "Static",
+      TRUE ~ "Other"
     ),
-    cluster_id = cumsum(is.na(delta_s) | delta_s > window_secs),
-    extract_year = as.character(extract_year)
   ) %>%
-  # Flag clusters with >1 distinct (non-NA) pin
-  group_by(cluster_id) %>%
-  mutate(
-    n_distinct_pin = n_distinct(pin, na.rm = TRUE),
-    is_multi_pin   = n_distinct_pin > 1L
-  ) %>%
-  ungroup() %>%
-  # Drop NA pins only if multi-pin
-  filter(!(is_multi_pin & is.na(pin))) %>%
-  # De-dupe the cluster IDs
-  mutate(
-    cluster_id = if_else(is_multi_pin,
-      paste(cluster_id, pin, sep = "_"),
-      as.character(cluster_id)
-    ),
-    cluster_id = as.integer(factor(cluster_id, levels = unique(cluster_id)))
-  ) %>%
-  select(-n_distinct_pin, -is_multi_pin) %>%
-  ungroup() %>%
   left_join(
     assessment_card %>%
+      mutate(assessment_year = as.integer(assessment_year)) %>%
       select(
         meta_pin, char_class, assessment_year,
         meta_triad_name, meta_card_num, is_report_eligible,
@@ -262,6 +244,7 @@ data <- logs %>%
       ),
     by = c("pin" = "meta_pin", "extract_year" = "assessment_year")
   )
+
 ```
 
 ---
@@ -275,21 +258,9 @@ data <- logs %>%
 NA Values are for requests that did not match a valid PIN
 
 ```{r}
+# We want to keep multi-cards just for the class related
 data_class <- data %>%
-  group_by(cluster_id) %>%
-  mutate(
-    # check if this group has any non-NA char_class.
-    # This will clear out duplicated queries where pin
-    # isn't identified within some of the requests.
-    has_non_na = any(!is.na(char_class))
-  ) %>%
-  # drop NA if group has other classes.
-  filter(!(has_non_na & is.na(char_class))) %>%
-  ungroup() %>%
-  mutate(
-    char_class = ifelse(is.na(char_class), "NA", as.character(char_class))
-  ) %>%
-  distinct(datetime, pin, char_class, .keep_all = TRUE)
+  filter(uri_indicator == "Query")
 
 data_class %>%
   group_by(char_class) %>%
@@ -317,6 +288,7 @@ data_class %>%
 NA class values are removed
 ```{r}
 data_class %>%
+  filter(!is.na(char_class)) %>%
   group_by(date, char_class) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
@@ -344,8 +316,8 @@ NA class values are removed
 
 ```{r}
 data_class %>%
+  filter(!is.na(char_class)) %>%
   mutate(date = as.Date(datetime)) %>%
-  distinct(datetime, pin, char_class, .keep_all = TRUE) %>%
   group_by(date, char_class) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   group_by(date) %>%
@@ -381,16 +353,14 @@ Extract year refers to the year which the user queried the data for.
 ### Overall
 
 ```{r}
-# Get the count of unique clusters by extract year
-data_extract_year <- data %>%
-  # Keep date for following charts, and they are
-  # already grouped within the cluster
-  group_by(cluster_id, extract_year, date) %>%
-  summarise(n = n()) %>%
-  ungroup()
+# This removes the duplicate cards from the previous query
+data <- data %>%
+  distinct(message, .keep_all = TRUE) %>%
+  mutate(extract_year = as.character(extract_year))
 
-data_extract_year %>%
+data %>%
   group_by(extract_year) %>%
+  filter(uri_indicator == "Query") %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
     x = ~extract_year,
@@ -411,9 +381,9 @@ data_extract_year %>%
 ### Total Over Time
 
 ```{r}
-data_extract_year %>%
-  filter(!is.na(extract_year)) %>%
-  # create date from datetime
+data %>%
+  filter(!is.na(extract_year),
+                uri_indicator == "Query") %>%
   group_by(date, extract_year) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
@@ -439,7 +409,8 @@ data_extract_year %>%
 
 ```{r}
 data %>%
-  filter(!is.na(extract_year)) %>%
+  filter(!is.na(extract_year),
+                uri_indicator == "Query") %>%
   group_by(date, extract_year) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   group_by(date) %>%
@@ -475,14 +446,13 @@ data %>%
 
 ```{r}
 data %>%
-  group_by(cluster_id) %>%
-  summarise(
+  filter(uri_indicator == "Query") %>%
+  mutate(
     eligibility = case_when(
-      any(is_report_eligible == TRUE, na.rm = TRUE) ~ "Eligible",
-      any(is_report_eligible == FALSE, na.rm = TRUE) ~ "Not Eligible",
-      all(is.na(is_report_eligible)) ~ "N/A"
-    ),
-    .groups = "drop"
+      is_report_eligible == TRUE ~ "Eligible",
+      is_report_eligible == FALSE ~ "Not Eligible",
+      is.na(is_report_eligible) ~ "N/A"
+    )
   ) %>%
   count(eligibility, name = "request_count") %>%
   plot_ly(
@@ -507,10 +477,10 @@ This allows for duplicate reasons if the same query is deemed ineligible.
 
 ```{r}
 data %>%
-  filter(!is.na(reason_report_ineligible)) %>%
+  filter(!is.na(reason_report_ineligible),
+                uri_indicator == "Query") %>%
   # This will allow for more than 1 reason for a cluster to be ineligible
   # to return multiple reasons
-  distinct(cluster_id, reason_report_ineligible) %>%
   count(reason_report_ineligible, name = "request_count") %>%
   plot_ly(
     x = ~reason_report_ineligible,
@@ -532,8 +502,8 @@ data %>%
 
 ```{r}
 data %>%
-  filter(!is.na(reason_report_ineligible)) %>%
-  distinct(cluster_id, reason_report_ineligible, date) %>%
+  filter(!is.na(reason_report_ineligible),
+         uri_indicator == "Query") %>%
   count(reason_report_ineligible, date, name = "request_count") %>%
   plot_ly(
     x = ~date,
@@ -558,8 +528,8 @@ data %>%
 
 ```{r}
 data %>%
-  filter(!is.na(reason_report_ineligible)) %>%
-  distinct(cluster_id, reason_report_ineligible, date) %>%
+  filter(!is.na(reason_report_ineligible),
+         uri_indicator == "Query") %>%
   count(date, reason_report_ineligible, name = "request_count") %>%
   complete(date, reason_report_ineligible, fill = list(request_count = 0)) %>%
   group_by(date) %>%
@@ -587,12 +557,12 @@ data %>%
 
 ```{r}
 df_counts <- data %>%
+  filter(uri_indicator == "Query") %>%
   mutate(
     township = meta_township_name,
     triad = meta_triad_name
   ) %>%
   filter(!is.na(township), !is.na(extract_year)) %>%
-  distinct(cluster_id, extract_year, township, triad, township) %>%
   group_by(extract_year, triad, township) %>%
   summarise(request_count = n(), .groups = "drop")
 
@@ -644,13 +614,17 @@ plot_township_year(df_counts, "2025")
 
 ## Distribution of HTTP Response Status Code over Time
 
+::: {.panel-tabset}
+
+### By Query
+
 ```{r}
 data %>%
   mutate(
     date   = as.Date(datetime),
     status = ifelse(is.na(`sc-status`), "Unknown", as.character(`sc-status`))
   ) %>%
-  distinct(date, cluster_id, status) %>%
+  filter(uri_indicator == "Query") %>%
   count(date, status, name = "cluster_count") %>%
   arrange(date, status) %>%
   plot_ly(
@@ -660,14 +634,41 @@ data %>%
     type = "scatter",
     mode = "lines+markers",
     hovertemplate = "Date: %{x}<br>Status:
-    %{fullData.name}<br>Clusters: %{y}<extra></extra>"
+    %{fullData.name}<br>Count: %{y}<extra></extra>"
   ) %>%
   layout(
     xaxis = list(title = "Date"),
-    yaxis = list(title = "Clusters"),
+    yaxis = list(title = "Count"),
     legend = list(title = list(text = "Status"))
   )
 ```
+
+### Including Static Objects
+
+```{r}
+data %>%
+  mutate(
+    date   = as.Date(datetime),
+    status = ifelse(is.na(`sc-status`), "Unknown", as.character(`sc-status`))
+  ) %>%
+  count(date, status, name = "cluster_count") %>%
+  arrange(date, status) %>%
+  plot_ly(
+    x = ~date,
+    y = ~cluster_count,
+    color = ~status,
+    type = "scatter",
+    mode = "lines+markers",
+    hovertemplate = "Date: %{x}<br>Status:
+    %{fullData.name}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Count"),
+    legend = list(title = list(text = "Status"))
+  )
+```
+
 ---
 
 ## Recent Errors (non-2xx/3xx status codes)
@@ -675,7 +676,6 @@ data %>%
 ```{r}
 data %>%
   # Keep only errors (not 2xx or 3xx)
-  # We don't filter distinct cluster here since we want to see all errors
   filter(!is.na(`sc-status`), !substr(`sc-status`, 1, 1) %in% c("2", "3")) %>%
   mutate(
     timestamp = as.POSIXct(datetime),
@@ -702,6 +702,10 @@ data %>%
 
 ## Most Common Browsers
 
+::: {.panel-tabset}
+
+### By Query
+
 ```{r}
 normalize_browser <- function(x) {
   x <- str_to_lower(str_squish(x))
@@ -724,10 +728,10 @@ normalize_browser <- function(x) {
 
 data %>%
   mutate(parsed = ua_parse(`cs(User-Agent)`)) %>%
+  filter(uri_indicator == "Query") %>%
   unnest_wider(parsed) %>%
   rename(browser = `ua.family`) %>%
   mutate(browser = normalize_browser(browser)) %>%
-  distinct(date, cluster_id, browser) %>%
   count(browser, name = "request_count") %>%
   mutate(browser = fct_reorder(browser, request_count)) %>%
   plot_ly(
@@ -742,12 +746,41 @@ data %>%
   )
 ```
 
+### Including Static Objects
+
+```{r}
+
+data %>%
+  mutate(parsed = ua_parse(`cs(User-Agent)`)) %>%
+  unnest_wider(parsed) %>%
+  rename(browser = `ua.family`) %>%
+  mutate(browser = normalize_browser(browser)) %>%
+  count(browser, name = "request_count") %>%
+  mutate(browser = fct_reorder(browser, request_count)) %>%
+  plot_ly(
+    x = ~browser, y = ~request_count,
+    type = "bar",
+    marker = list(color = "steelblue"),
+    hovertemplate = "Browser: %{x}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(title = "Browser"),
+    yaxis = list(title = "Count")
+  )
+```
+
+
 ---
 
 ## Most Common Referer Domains
 
+::: {.panel-tabset}
+
+### By Query
+
 ```{r}
 data %>%
+  filter(uri_indicator == "Query") %>%
   mutate(
     referer_raw = `cs(Referer)`,
     domain = ifelse(
@@ -756,7 +789,6 @@ data %>%
       domain(referer_raw)
     )
   ) %>%
-  distinct(cluster_id, domain) %>% # one row per cluster/domain
   group_by(domain) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   arrange(desc(request_count)) %>%
@@ -774,12 +806,47 @@ data %>%
   )
 ```
 
+### Including Static Objects
+
+```{r}
+data %>%
+  mutate(
+    referer_raw = `cs(Referer)`,
+    domain = ifelse(
+      is.na(referer_raw) | referer_raw == "-",
+      "None",
+      domain(referer_raw)
+    )
+  ) %>%
+  group_by(domain) %>%
+  summarise(request_count = n(), .groups = "drop") %>%
+  arrange(desc(request_count)) %>%
+  plot_ly(
+    x = ~ reorder(domain, request_count),
+    y = ~request_count,
+    type = "bar",
+    marker = list(color = "steelblue"),
+    hovertemplate = "Domain: %{x}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(title = "Domain"),
+    yaxis = list(title = "Count"),
+    bargap = 0.2
+  )
+```
+
+
 ---
 
 ## Cache Hit Rate over Time
 
 ```{r}
+library(dplyr)
+library(plotly)
+library(stringr)
+
 data %>%
+  filter(uri_indicator == "Query") %>%
   mutate(
     result_type = as.character(`x-edge-response-result-type`),
     is_hit = str_detect(
@@ -787,13 +854,10 @@ data %>%
       regex("hit|redirect", ignore_case = TRUE)
     )
   ) %>%
-  group_by(date, cluster_id) %>%
-  summarise(cluster_hit = any(is_hit, na.rm = TRUE), .groups = "drop") %>%
   group_by(date) %>%
   summarise(
-    total_clusters = n(),
-    hits = sum(cluster_hit),
-    cache_hit_pct = 100 * hits / total_clusters,
+    count = n(),
+    cache_hit_pct = 100 * sum(is_hit, na.rm = TRUE) / count,
     .groups = "drop"
   ) %>%
   arrange(date) %>%
@@ -808,4 +872,5 @@ data %>%
     xaxis = list(title = "Date"),
     yaxis = list(title = "Cache hit %", ticksuffix = "%")
   )
+
 ```
