@@ -216,7 +216,7 @@ data <- logs %>%
       str_extract(`cs(Referer)`, "(?<=/)(202[0-9])(?=/)")
     ),
     extract_year = as.integer(extract_year),
-    # This is an indiicator for the main query, or the query
+    # This is an indicator for the main query, or the query
     # for the static assets.
     # For the rest of the document, we will use the value of 'Query'
     # when trying to identify a unique query. We keep the static in
@@ -249,7 +249,7 @@ data <- logs %>%
 ### Overall
 
 ```{r}
-# We want to keep multi-cards just for the class related
+# We want to keep multi-cards just for the class related plots
 data_class <- data %>%
   filter(uri_indicator == "Query")
 
@@ -353,7 +353,7 @@ Extract year refers to the year which the user queried the data for.
 ### Overall
 
 ```{r}
-# This removes the duplicate cards from the previous query
+# This removes the duplicate cards from the previous join.
 data <- data %>%
   distinct(message, .keep_all = TRUE) %>%
   mutate(extract_year = as.character(extract_year))
