@@ -254,8 +254,6 @@ data <- logs %>%
 
 ### Overall
 
-NA Values are for requests that did not match a valid PIN
-
 ```{r}
 # We want to keep multi-cards just for the class related
 data_class <- data %>%
@@ -284,7 +282,6 @@ data_class %>%
 
 ### Count Over Time
 
-NA class values are removed
 ```{r}
 data_class %>%
   filter(!is.na(char_class)) %>%
@@ -316,8 +313,6 @@ data_class %>%
 ```
 
 ### % Over Time
-
-NA class values are removed
 
 ```{r}
 data_class %>%
@@ -377,7 +372,7 @@ data %>%
     x = ~extract_year,
     y = ~request_count,
     type = "bar",
-    marker = list(color = "steelblue"),
+    marker = list(color = "lightblue"),
     hovertemplate = paste(
       "Year: %{x}<br>",
       "Count: %{y}<extra></extra>"
@@ -486,7 +481,7 @@ data %>%
     x = ~eligibility,
     y = ~request_count,
     type = "bar",
-    marker = list(color = c("steelblue", "tomato", "grey")),
+    marker = list(color = c("lightblue", "tomato", "grey")),
     hovertemplate = paste(
       "Eligibility: %{x}<br>",
       "Count: %{y}<extra></extra>"
@@ -508,14 +503,12 @@ data %>%
     !is.na(reason_report_ineligible),
     uri_indicator == "Query"
   ) %>%
-  # This will allow for more than 1 reason for a cluster to be ineligible
-  # to return multiple reasons
   count(reason_report_ineligible, name = "request_count") %>%
   plot_ly(
     x = ~reason_report_ineligible,
     y = ~request_count,
     type = "bar",
-    marker = list(color = "steelblue"),
+    marker = list(color = "lightblue"),
     hovertemplate = paste(
       "Reason: %{x}<br>",
       "Count: %{y}<extra></extra>"
@@ -670,11 +663,11 @@ data %>%
     status = ifelse(is.na(`sc-status`), "Unknown", as.character(`sc-status`))
   ) %>%
   filter(uri_indicator == "Query") %>%
-  count(date, status, name = "cluster_count") %>%
+  count(date, status, name = "Count") %>%
   arrange(date, status) %>%
   plot_ly(
     x = ~date,
-    y = ~cluster_count,
+    y = ~Count,
     color = ~status,
     type = "scatter",
     mode = "lines+markers",
@@ -702,11 +695,11 @@ data %>%
     date   = as.Date(datetime),
     status = ifelse(is.na(`sc-status`), "Unknown", as.character(`sc-status`))
   ) %>%
-  count(date, status, name = "cluster_count") %>%
+  count(date, status, name = "Count") %>%
   arrange(date, status) %>%
   plot_ly(
     x = ~date,
-    y = ~cluster_count,
+    y = ~Count,
     color = ~status,
     type = "scatter",
     mode = "lines+markers",
@@ -757,6 +750,8 @@ data %>%
 
 ---
 
+:::
+
 ## Most Common Browsers
 
 ::: {.panel-tabset}
@@ -794,7 +789,7 @@ data %>%
   plot_ly(
     x = ~browser, y = ~request_count,
     type = "bar",
-    marker = list(color = "steelblue"),
+    marker = list(color = "lightblue"),
     hovertemplate = "Browser: %{x}<br>Count: %{y}<extra></extra>"
   ) %>%
   layout(
@@ -816,7 +811,7 @@ data %>%
   plot_ly(
     x = ~browser, y = ~request_count,
     type = "bar",
-    marker = list(color = "steelblue"),
+    marker = list(color = "lightblue"),
     hovertemplate = "Browser: %{x}<br>Count: %{y}<extra></extra>"
   ) %>%
   layout(
@@ -827,6 +822,8 @@ data %>%
 
 
 ---
+
+:::
 
 ## Most Common Referer Domains
 
@@ -852,7 +849,7 @@ data %>%
     x = ~ reorder(domain, request_count),
     y = ~request_count,
     type = "bar",
-    marker = list(color = "steelblue"),
+    marker = list(color = "lightblue"),
     hovertemplate = "Domain: %{x}<br>Count: %{y}<extra></extra>"
   ) %>%
   layout(
@@ -881,7 +878,7 @@ data %>%
     x = ~ reorder(domain, request_count),
     y = ~request_count,
     type = "bar",
-    marker = list(color = "steelblue"),
+    marker = list(color = "lightblue"),
     hovertemplate = "Domain: %{x}<br>Count: %{y}<extra></extra>"
   ) %>%
   layout(
@@ -893,6 +890,8 @@ data %>%
 
 
 ---
+
+:::
 
 ## Cache Hit Rate over Time
 
@@ -973,3 +972,4 @@ data %>%
   )
 ```
 
+:::
