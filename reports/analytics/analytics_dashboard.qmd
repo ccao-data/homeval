@@ -244,14 +244,20 @@ data <- logs %>%
 
 ## Request Count by Class
 
+NA values are for PINs which do not have a matching assessment_card record.
+
 ::: {.panel-tabset}
 
 ### Overall
 
+
 ```{r}
 # We want to keep multi-cards just for the class related plots
 data_class <- data %>%
-  filter(uri_indicator == "Query")
+  filter(uri_indicator == "Query") %>%
+  # Make sure we identify PINs which are incorrect or not joined to assessment_card
+  # For example PIN 14110010074923
+  mutate(char_class = if_else(is.na(char_class), "NA", as.character(char_class)))
 
 data_class %>%
   group_by(char_class) %>%
