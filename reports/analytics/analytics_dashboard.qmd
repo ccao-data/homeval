@@ -29,7 +29,7 @@ library(uaparserjs)
 
 
 ```{r}
-conn <- dbConnect(noctua::athena())
+conn <- dbConnect(noctua::athena(), rstudio_conn_tab = FALSE)
 
 cache_dir <- "data/assessment_card"
 dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
