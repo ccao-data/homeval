@@ -163,7 +163,7 @@ walk(dates_to_fetch, function(d) {
   }
 
   message("Fetching ", format(d), " ...")
-  df <- df <- fetch_events_for_day(d)
+  df <- fetch_events_for_day(d)
 
   arrow::write_parquet(df, out_file)
   message("Wrote ", nrow(df), " events to ", fs::path_abs(out_file))
