@@ -96,6 +96,7 @@ fetch_events_for_day <- function(date_local) {
     resp <- cloudwatchlogs_client$get_log_events(
       logGroupName      = log_group_name,
       logStreamName     = log_stream_name,
+      endTime           = end_ms,
       nextToken         = next_token,
       startFromHead     = TRUE
     )
