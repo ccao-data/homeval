@@ -204,8 +204,6 @@ data <- logs %>%
     out
   })) %>%
   select(-any_of(fields)) %>%
-  # There are duplicate messages. This keeps one per query.
-  distinct(message, .keep_all = TRUE) %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
   mutate(
     pin = coalesce(
