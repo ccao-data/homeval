@@ -653,7 +653,7 @@ plot_township_year(df_counts, "2025")
 
 ::: {.panel-tabset}
 
-### By Query
+### Excluding Static File Requests
 
 ```{r}
 data %>%
