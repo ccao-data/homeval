@@ -686,7 +686,7 @@ data %>%
   )
 ```
 
-### Including Static Objects
+### Including Static File Requests
 
 ```{r}
 data %>%
