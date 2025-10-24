@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate PINVAL report markdown (and optionally HTML) files for a given comps
+Generate HomeVal report markdown (and optionally HTML) files for a given comps
 model run ID. A user may ask for either **one or more explicit PINs** *or* for **all
 PINs that belong to a triad** (city, north, south). Exactly one of the two must
 be supplied. If the user passes an empty string for either of the --pin or --triad
@@ -9,16 +9,16 @@ arguments, the script will ignore that argument.
 Examples
 --------
 Generate every PIN:
-    $ python3 generate_pinval.py \
+    $ python3 generate_homeval.py \
           --run-id 2025-04-25-fancy-free-billy \
 
 Generate two specific PINs:
-    $ python3 generate_pinval.py \
+    $ python3 generate_homeval.py \
           --run-id 2025-04-25-fancy-free-billy \
           --pin 01011000040000 10112040080000
 
 Generate every PIN in towns 10 and 11:
-    $ python3 generate_pinval.py \
+    $ python3 generate_homeval.py \
           --run-id 2025-04-25-fancy-free-billy \
           --township 10 11
 """
@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     """Parse command‑line arguments and perform basic validation."""
 
     parser = argparse.ArgumentParser(
-        description="Generate PINVAL report markdown (and optionally HTML) files",
+        description="Generate HomeVal report markdown (and optionally HTML) files",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -660,7 +660,7 @@ def load_vars_dict(cursor) -> dict[str, dict]:
     """
     Pull the crosswalk for labels and tooltips into a dict:
     """
-    sql = f"""SELECT code, display_name, description FROM {constants.PINVAL_DATA_DICT_TABLE}"""
+    sql = f"""SELECT code, display_name, description FROM {constants.HOMEVAL_DATA_DICT_TABLE}"""
     df = run_athena_query(cursor, sql)
     # Return a dict where each key is a column code and the value is a dict with label and description info
     return {
@@ -731,7 +731,7 @@ def main() -> None:
 
     assessment_sql = f"""
         SELECT *
-        FROM {constants.PINVAL_ASSESSMENT_CARD_TABLE}
+        FROM {constants.HOMEVAL_ASSESSMENT_CARD_TABLE}
         WHERE {where_assessment}
     """
 
@@ -752,10 +752,10 @@ def main() -> None:
 
     comps_sql = f"""
         SELECT comp.*
-        FROM {constants.PINVAL_COMP_TABLE} AS comp
+        FROM {constants.HOMEVAL_COMP_TABLE} AS comp
         INNER JOIN (
             SELECT DISTINCT meta_pin
-            FROM {constants.PINVAL_ASSESSMENT_CARD_TABLE}
+            FROM {constants.HOMEVAL_ASSESSMENT_CARD_TABLE}
             WHERE {where_assessment}
         ) AS card
           ON comp.pin = card.meta_pin
@@ -789,7 +789,7 @@ def main() -> None:
     # Declare outputs paths
     hugo_root = project_root / "hugo"
     content_root = hugo_root / "content"
-    md_outdir = content_root / "pinval-reports"
+    md_outdir = content_root / "homeval-reports"
     md_outdir.mkdir(parents=True, exist_ok=True)
 
     start_time_dict_groupby = time.time()
@@ -868,7 +868,7 @@ def main() -> None:
 
             # Move reports directory out of the Hugo content root so that we
             # can move reports back in neighborhood-by-neighborhood
-            temp_reports_dir = hugo_root / "temp-pinval-reports"
+            temp_reports_dir = hugo_root / "temp-homeval-reports"
             if temp_reports_dir.exists():
                 shutil.rmtree(temp_reports_dir)
             shutil.move(str(md_outdir), str(temp_reports_dir))

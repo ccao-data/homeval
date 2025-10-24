@@ -129,7 +129,7 @@ def get_township_codes(
             .execute(
                 f"""
                     SELECT DISTINCT meta_township_code
-                    FROM {constants.PINVAL_ASSESSMENT_CARD_TABLE}
+                    FROM {constants.HOMEVAL_ASSESSMENT_CARD_TABLE}
                     WHERE assessment_year = %(year)s
                     {"AND is_report_eligible" if eligible_only else ""}
                     ORDER BY meta_township_code
@@ -160,7 +160,7 @@ def get_run_id(run_id: str, year: str) -> str:
                 .execute(
                     f"""
                     SELECT 1
-                    FROM {constants.PINVAL_COMP_TABLE}
+                    FROM {constants.HOMEVAL_COMP_TABLE}
                     WHERE run_id = %(run_id)s
                     LIMIT 1
                 """,
@@ -171,7 +171,7 @@ def get_run_id(run_id: str, year: str) -> str:
         if not run_id_is_valid:
             raise ValueError(
                 f"Run ID {run_id} not found in view "
-                f"{constants.PINVAL_COMP_TABLE}. "
+                f"{constants.HOMEVAL_COMP_TABLE}. "
                 "Double-check to make sure this is a comps run ID."
             )
     else:
@@ -186,7 +186,7 @@ def get_run_id(run_id: str, year: str) -> str:
             .execute(
                 f"""
                     SELECT MAX(run_id)
-                    FROM {constants.PINVAL_COMP_TABLE}
+                    FROM {constants.HOMEVAL_COMP_TABLE}
                     WHERE assessment_year = %(year)s
                 """,
                 {"year": year},
