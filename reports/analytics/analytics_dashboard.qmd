@@ -17,6 +17,7 @@ library(DBI)
 library(dplyr)
 library(fs)
 library(glue)
+library(leaflet)
 library(lubridate)
 library(paws)
 library(plotly)
@@ -207,7 +208,7 @@ data <- logs %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
   mutate(
     pin = coalesce(
-      str_extract(`cs-uri-stem`, "(?<=/)\\d{14}(?=\\.html)"),
+      str_extract(`cs-uri-stem`, "(?<=/)\\d{14}"),
       str_extract(`cs(Referer)`, "\\d{14}(?=\\.html)")
     ),
     extract_year = coalesce(
@@ -233,7 +234,8 @@ data <- logs %>%
       select(
         meta_pin, char_class, assessment_year,
         meta_triad_name, meta_card_num, is_report_eligible,
-        reason_report_ineligible, meta_township_name
+        reason_report_ineligible, meta_township_name, loc_latitude,
+        loc_longitude
       ),
     by = c("pin" = "meta_pin", "extract_year" = "assessment_year")
   )
@@ -254,9 +256,18 @@ NA values are for PINs which do not have a matching assessment_card record.
 # We want to keep multi-cards just for the class related plots
 data_class <- data %>%
   filter(uri_indicator == "Query") %>%
-  # Make sure we identify PINs which are incorrect or not joined to assessment_card
-  # For example PIN 14110010074923
-  mutate(char_class = if_else(is.na(char_class), "NA", as.character(char_class)))
+  mutate(
+    # Make sure we identify PINs which are incorrect
+    # or not joined to assessment_card
+    # For example PIN 14110010074923
+    char_class = if_else(is.na(char_class), "NA", as.character(char_class))
+  ) %>%
+  # This keeps unique classes by queries.
+  # If a multi-class card is queried, it will return
+  # one value for the class tables.
+  # Datetime has issues with second lag, so it is not
+  # a fool-proof method.
+  distinct(pin, date, datetime, char_class)
 
 data_class %>%
   group_by(char_class) %>%
@@ -283,7 +294,6 @@ data_class %>%
 
 ```{r}
 data_class %>%
-  filter(!is.na(char_class)) %>%
   group_by(date, char_class) %>%
   summarise(request_count = n(), .groups = "drop") %>%
   plot_ly(
@@ -315,7 +325,6 @@ data_class %>%
 
 ```{r}
 data_class %>%
-  filter(!is.na(char_class)) %>%
   mutate(date = as.Date(datetime)) %>%
   group_by(date, char_class) %>%
   summarise(request_count = n(), .groups = "drop") %>%
@@ -388,7 +397,6 @@ data %>%
 ```{r}
 data %>%
   filter(
-    !is.na(extract_year),
     uri_indicator == "Query"
   ) %>%
   group_by(date, extract_year) %>%
@@ -423,7 +431,6 @@ data %>%
 ```{r}
 data %>%
   filter(
-    !is.na(extract_year),
     uri_indicator == "Query"
   ) %>%
   group_by(date, extract_year) %>%
@@ -499,12 +506,19 @@ This allows for duplicate reasons if the same query is deemed ineligible.
 ```{r}
 data %>%
   filter(
-    !is.na(reason_report_ineligible),
-    uri_indicator == "Query"
+    uri_indicator == "Query",
+    is_report_eligible %in% c(FALSE, NA)
   ) %>%
-  count(reason_report_ineligible, name = "request_count") %>%
+  mutate(
+    reason_clean = case_when(
+      is.na(reason_report_ineligible) & is.na(pin) ~ "Unmatched PIN",
+      is.na(reason_report_ineligible) ~ "Un-joined PIN",
+      TRUE ~ as.character(reason_report_ineligible)
+    )
+  ) %>%
+  count(reason_clean, name = "request_count") %>%
   plot_ly(
-    x = ~reason_report_ineligible,
+    x = ~reason_clean,
     y = ~request_count,
     type = "bar",
     marker = list(color = "lightblue"),
@@ -514,7 +528,10 @@ data %>%
     )
   ) %>%
   layout(
-    xaxis = list(title = "Eligibility Reason"),
+    xaxis = list(
+      title = "Eligibility Reason",
+      categoryorder = "total descending"
+    ),
     yaxis = list(title = "Count")
   )
 ```
@@ -524,14 +541,23 @@ data %>%
 ```{r}
 data %>%
   filter(
-    !is.na(reason_report_ineligible),
-    uri_indicator == "Query"
+    uri_indicator == "Query",
+    # keep ineligible or null eligible cases.
+    # This allows us to find unjoined pins
+    is_report_eligible %in% c(FALSE, NA),
+    !is.na(pin) # Removes queries which do not have a PIN associated with it
   ) %>%
-  count(reason_report_ineligible, date, name = "request_count") %>%
+  mutate(
+    reason_clean = case_when(
+      is.na(reason_report_ineligible) ~ "Un-joined PIN",
+      TRUE ~ as.character(reason_report_ineligible)
+    )
+  ) %>%
+  count(reason_clean, date, name = "request_count") %>%
   plot_ly(
     x = ~date,
     y = ~request_count,
-    color = ~reason_report_ineligible,
+    color = ~reason_clean,
     type = "bar",
     hovertemplate = paste(
       "Date: %{x}<br>",
@@ -596,10 +622,10 @@ data %>%
 df_counts <- data %>%
   filter(uri_indicator == "Query") %>%
   mutate(
-    township = meta_township_name,
-    triad = meta_triad_name
+    township = dplyr::coalesce(meta_township_name, "NA"),
+    triad = dplyr::coalesce(meta_triad_name, "NA"),
+    extract_year = dplyr::coalesce(extract_year, "NA")
   ) %>%
-  filter(!is.na(township), !is.na(extract_year)) %>%
   group_by(extract_year, triad, township) %>%
   summarise(request_count = n(), .groups = "drop")
 
@@ -631,9 +657,39 @@ plot_township_year <- function(df_counts, target_year) {
 years <- sort(unique(df_counts$extract_year))
 ```
 
-## Request Count by Township and Reassessment Year
+## Request Count by Township and Query Year
 
 ::: {.panel-tabset}
+
+### Overall
+
+```{r}
+data %>%
+  filter(uri_indicator == "Query") %>%
+  transmute(
+    triad    = dplyr::coalesce(meta_triad_name, "NA"),
+    township = dplyr::coalesce(meta_township_name, "NA")
+  ) %>%
+  count(triad, township, name = "request_count") %>%
+  arrange(triad, township) %>%
+  mutate(x_label = paste(triad, township, sep = " | ")) %>%
+  plot_ly(
+    x = ~x_label,
+    y = ~request_count,
+    type = "bar",
+    color = ~triad,
+    hovertemplate = paste(
+      "Triad | Township: %{x}<br>",
+      "Count: %{y}<extra></extra>"
+    )
+  ) %>%
+  layout(
+    xaxis = list(title = "Triad | Township"),
+    yaxis = list(title = "Count"),
+    legend = list(title = list(text = "Triad"))
+  )
+```
+
 
 ### 2024
 ```{r}
@@ -648,6 +704,43 @@ plot_township_year(df_counts, "2025")
 :::
 
 ---
+
+## Map of Distinct Queried Pins
+
+```{r}
+df <- data %>%
+  filter(uri_indicator == "Query") %>%
+  distinct(pin, .keep_all = TRUE) %>%
+  filter(!is.na(loc_latitude), !is.na(loc_longitude)) %>%
+  mutate(
+    extract_year = as.factor(extract_year)
+  )
+
+pal <- colorFactor(
+  palette = "Set1",
+  domain = df$extract_year,
+  na.color = "gray"
+)
+
+
+leaflet(df) %>%
+  addProviderTiles("OpenStreetMap") %>%
+  addCircleMarkers(
+    lng = ~loc_longitude,
+    lat = ~loc_latitude,
+    radius = 4,
+    color = ~ pal(extract_year),
+    stroke = FALSE,
+    fillOpacity = 0.7
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~extract_year,
+    title = "Extract Year",
+    opacity = 1
+  )
+```
 
 ## Distribution of HTTP Response Status Code over Time
 
@@ -755,7 +848,7 @@ data %>%
 
 ::: {.panel-tabset}
 
-### By Query
+### Excluding Static File Requests
 
 ```{r}
 normalize_browser <- function(x) {
@@ -797,7 +890,7 @@ data %>%
   )
 ```
 
-### Including Static Objects
+### Including Static File Requests
 
 ```{r}
 data %>%
@@ -828,7 +921,7 @@ data %>%
 
 ::: {.panel-tabset}
 
-### By Query
+### Excluding Static File Requests
 
 ```{r}
 data %>%
@@ -858,7 +951,7 @@ data %>%
   )
 ```
 
-### Including Static Objects
+### Including Static File Requests
 
 ```{r}
 data %>%
@@ -896,7 +989,7 @@ data %>%
 
 ::: {.panel-tabset}
 
-### By Query
+### Excluding Static File Requests
 
 ```{r}
 data %>%
@@ -934,7 +1027,7 @@ data %>%
   )
 ```
 
-### Including Static Objects
+### Including Static File Requests
 
 ```{r}
 data %>%
@@ -968,6 +1061,55 @@ data %>%
       tickangle = 45
     ),
     yaxis = list(title = "Cache hit %", ticksuffix = "%")
+  )
+```
+
+:::
+
+## Request Times
+
+::: {.panel-tabset}
+
+### Time to First byte
+
+```{r}
+data %>%
+  filter(uri_indicator != "Other") %>%
+  mutate(
+    time_to_first_byte_ms = as.numeric(`time-to-first-byte`) * 1000
+  ) %>%
+  plot_ly(
+    x = ~time_to_first_byte_ms,
+    type = "histogram",
+    nbinsx = 50,
+    marker = list(color = "lightblue"),
+    hovertemplate =
+      "Time to first byte (ms):%{x}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(title = "Time to First Byte (ms)"),
+    yaxis = list(title = "Count")
+  )
+```
+
+### Time Taken
+
+```{r}
+data %>%
+  filter(uri_indicator != "Other") %>%
+  mutate(
+    time_taken_ms = as.numeric(`time-taken`) * 1000
+  ) %>%
+  plot_ly(
+    x = ~time_taken_ms,
+    type = "histogram",
+    nbinsx = 50,
+    marker = list(color = "lightblue"),
+    hovertemplate = "Time taken (ms): %{x}<br>Count: %{y}<extra></extra>"
+  ) %>%
+  layout(
+    xaxis = list(title = "Time Taken (ms)"),
+    yaxis = list(title = "Count")
   )
 ```
 
