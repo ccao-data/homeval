@@ -1,52 +1,12 @@
-# PINVAL
+# HomeVal
 
 This repo stores the code necessary to generate experimental reports
 explaining how the CCAO Data team's residential model valued any particular
 single-family home or multifamily home with six or fewer units.
 
-> [!WARNING]
-> This project is an experimental work-in-progress and is not yet used in
-> production. Reports generated using this code may not accurately reflect
-> model behavior or CCAO policy.
+## Development
 
-## Developing
-
-We currently support two ways of generating PINVAL reports: With
-[Quarto](#quarto) or with [Hugo](#hugo).
-
-### Quarto
-
-This project expects that you have R and the [Quarto
-CLI](https://quarto.org/docs/get-started/) installed on your machine.
-A working installation of RStudio is recommended, but not required.
-
-1. Ensure that renv is installed:
-
-```r
-install.packages("renv")
-```
-
-2. Create a renv environment and install R dependencies:
-
-```r
-renv::restore()
-```
-
-3. [Optional] If you would like to run the report for a specific PIN, year, or
-   model run, adjust run parameters under the `params` attribute in the YAML
-   front matter in `pinval.qmd`.
-
-4. Make sure you are [authenticated with
-   AWS](https://github.com/ccao-data/wiki/blob/master/How-To/Setup-the-AWS-Command-Line-Interface-and-Multi-factor-Authentication.md).
-
-5. Render the `pinval.qmd` report using Quarto, either by clicking the "Render"
-   button in the RStudio UI or by calling the Quarto CLI:
-
-```
-quarto render pinval.qmd --to html -o pinval.html
-```
-
-### Hugo
+### Running a development server
 
 This project expects that you have the [Hugo CLI](https://gohugo.io/installation/)
 installed on your machine.
@@ -68,6 +28,39 @@ cd hugo
 hugo serve
 ```
 
-3. For a quick sample report, see the examples:
-  - http://localhost:1313/example-single-card
-  - http://localhost:1313/example-multi-card
+3. Any reports that [you have generated](#generating-reports)
+   will be available in a browser at http://localhost:1313/.
+
+### Generating reports
+
+You can use the [`generate_homeval`
+script](https://github.com/ccao-data/homeval/blob/main/scripts/generate_homeval/generate_homeval.py)
+to generate reports that you can view locally.
+
+Start by creating a virtual environment for the script and installing its
+dependencies:
+
+```
+uv venv scripts/generate_homeval/.venv
+source scripts/generate_homeval/.venv/bin/activate
+uv pip install scripts/generate_homeval
+```
+
+Then, use the script to generate reports for one or more PINs using a given
+comps run ID:
+
+```
+AWS_ATHENA_S3_STAGING_DIR="<your_athena_staging_dir>" python3 scripts/generate_homeval/generate_homeval.py \
+   --run-id <your_comps_run_id> \
+   --pin <one_or_more_space_separated_pins>
+```
+
+Run `python3 scripts/generate_homeval/generate_homeval.py --help` to see full
+documentation for the script.
+
+## Deployment
+
+We manage deployments using the [`generate-homeval` GitHub
+workflow](https://github.com/ccao-data/homeval/actions/workflows/generate-homeval.yaml).
+That workflow includes options for deploying to a development environment as
+well as the production environment.
