@@ -706,6 +706,10 @@ plot_township_year(df_counts, "2025")
 
 ## Map of Distinct Queried Pins
 
+This map filters out any queries for PINs that do not have coordinates in the
+underlying data, which is always true for non-tri PINs. As such, any queries
+for non-tri PINs (e.g. north suburbs PINs in 2024) will not appear on this map.
+
 ```{r}
 df <- data %>%
   filter(uri_indicator == "Query") %>%
