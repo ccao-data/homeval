@@ -511,8 +511,7 @@ data %>%
   ) %>%
   mutate(
     reason_clean = case_when(
-      is.na(reason_report_ineligible) & is.na(pin) ~ "Unmatched PIN",
-      is.na(reason_report_ineligible) ~ "Un-joined PIN",
+      is.na(reason_report_ineligible) ~ "Invalid PIN",
       TRUE ~ as.character(reason_report_ineligible)
     )
   ) %>%
