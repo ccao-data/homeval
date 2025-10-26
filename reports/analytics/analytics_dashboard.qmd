@@ -504,7 +504,7 @@ data %>%
 This allows for duplicate reasons if the same query is deemed ineligible.
 
 ```{r}
-data %>%
+ineligbility_data <- data %>%
   filter(
     uri_indicator == "Query",
     is_report_eligible %in% c(FALSE, NA)
@@ -514,7 +514,9 @@ data %>%
       is.na(reason_report_ineligible) ~ "Invalid PIN",
       TRUE ~ as.character(reason_report_ineligible)
     )
-  ) %>%
+  )
+
+ineligbility_data %>%
   count(reason_clean, name = "request_count") %>%
   plot_ly(
     x = ~reason_clean,
@@ -538,20 +540,7 @@ data %>%
 ### Count Over Time
 
 ```{r}
-data %>%
-  filter(
-    uri_indicator == "Query",
-    # keep ineligible or null eligible cases.
-    # This allows us to find unjoined pins
-    is_report_eligible %in% c(FALSE, NA),
-    !is.na(pin) # Removes queries which do not have a PIN associated with it
-  ) %>%
-  mutate(
-    reason_clean = case_when(
-      is.na(reason_report_ineligible) ~ "Un-joined PIN",
-      TRUE ~ as.character(reason_report_ineligible)
-    )
-  ) %>%
+ineligbility_data %>%
   count(reason_clean, date, name = "request_count") %>%
   plot_ly(
     x = ~date,
@@ -581,11 +570,7 @@ data %>%
 ### % Over Time
 
 ```{r}
-data %>%
-  filter(
-    !is.na(reason_report_ineligible),
-    uri_indicator == "Query"
-  ) %>%
+ineligbility_data %>%
   count(date, reason_report_ineligible, name = "request_count") %>%
   complete(date, reason_report_ineligible, fill = list(request_count = 0)) %>%
   group_by(date) %>%
