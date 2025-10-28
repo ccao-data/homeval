@@ -507,6 +507,9 @@ This allows for duplicate reasons if the same query is deemed ineligible.
 ineligbility_data <- data %>%
   filter(
     uri_indicator == "Query",
+    # This filters out eligible pins which will all have NA reason
+    # It allow us to keep queries which did not have a valid pin
+    # as their own category and provide an Invalid PIN reason.
     is_report_eligible %in% c(FALSE, NA)
   ) %>%
   mutate(
