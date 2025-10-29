@@ -801,9 +801,7 @@ data %>%
   )
 ```
 
----
-
-## Recent Errors (non-2xx/3xx status codes)
+### Recent Errors (non-2xx/3xx status codes)
 
 ```{r}
 data %>%
@@ -828,9 +826,6 @@ data %>%
       align = "left"
     )
   )
-```
-
----
 
 :::
 
