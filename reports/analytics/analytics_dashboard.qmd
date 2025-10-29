@@ -197,7 +197,6 @@ data <- logs %>%
   mutate(parsed = purrr::map(message, ~ {
     val <- jsonlite::fromJSON(.x, simplifyVector = TRUE)
     out <- setNames(vector("list", length(fields)), fields)
-    out <- setNames(vector("list", length(fields)), fields)
     for (nm in fields) {
       out[[nm]] <-
         if (nm %in% names(val)) as.character(val[[nm]]) else NA_character_
