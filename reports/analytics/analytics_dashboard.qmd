@@ -5,7 +5,7 @@ execute:
   warning: false
   message: false
 params:
-  # Dates must be inserted as YYYY-MM-DD. 
+  # Dates must be inserted as YYYY-MM-DD.
   # Lists of IP's or excluded dates are separated by '-'.
   # All params are optional and will default
   # to querying the first day of data to the
@@ -14,7 +14,7 @@ params:
   excluded_dates:
   end_date:
   query_today: FALSE
-  ip_addresses_to_filter:  
+  ip_addresses_to_filter:
 format:
   html:
     embed-resources: true
@@ -56,7 +56,6 @@ end_date <- as.Date(ifelse(
   Sys.Date(),
   params$end_date
 ))
-
 ```
 
 
@@ -178,11 +177,17 @@ dates_to_fetch <- c(
     ],
     c(
       cached_dates,
-      if (!is.null(params$excluded_dates))
+      if (!is.null(params$excluded_dates)) {
         as.Date(params$excluded_dates)
+      }
     )
   ),
-  if (is.null(params$query_today) || isTRUE(params$query_today)) end_date else NULL
+  if (is.null(params$query_today) ||
+    isTRUE(params$query_today)) { # nolint
+    end_date
+  } else {
+    NULL
+  }
 ) |> sort()
 
 
@@ -196,7 +201,7 @@ walk(dates_to_fetch, function(d) {
   out_file <- fs::path(out_dir, paste0("logs_", format(d), ".parquet"))
   message("Target file: ", fs::path_abs(out_file))
 
-  if (fs::file_exists(out_file) && d != end_date) {
+  if (fs::file_exists(out_file) & d != end_date) {
     message("Skipping ", format(d), " (already cached).")
     return(invisible(NULL))
   }
@@ -247,24 +252,34 @@ data <- logs %>%
     # This means that if cached files used a different query,
     # there will be more cached files that are unnecessary.
     # Because of this, we filter based on the params a second time.
-    if (!is.null(params$end_date) && nzchar(params$end_date))
+    if (!is.null(params$end_date) &
+      nzchar(params$end_date)) { # nolint
       date <= as.Date(params$end_date)
-    else TRUE,
-
-
-    if (!is.null(params$start_date) && nzchar(params$start_date))
+    } else {
+      TRUE
+    },
+    if (!is.null(params$start_date) &
+      nzchar(params$start_date)) { # nolint
       date >= as.Date(params$start_date)
-    else TRUE,
+    } else {
+      TRUE
+    },
 
     # excluded dates (list of strings)
-    if (!is.null(params$excluded_dates) && length(params$excluded_dates) > 0)
+    if (!is.null(params$excluded_dates) &
+      length(params$excluded_dates) > 0) { # nolint
       !(date %in% as.Date(params$excluded_dates))
-    else TRUE,
+    } else {
+      TRUE
+    },
 
     # excluded IPs
-    if (!is.null(params$ip_addresses_to_filter) && length(params$ip_addresses_to_filter) > 0)
+    if (!is.null(params$ip_addresses_to_filter) &
+      length(params$ip_addresses_to_filter) > 0) { # nolint
       !(`c-ip` %in% params$ip_addresses_to_filter)
-    else TRUE
+    } else {
+      TRUE
+    }
   ) %>%
   mutate(
     pin = coalesce(
