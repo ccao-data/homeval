@@ -20,7 +20,6 @@ format:
     embed-resources: true
     grid:
       body-width: 1000px
-
 ---
 
 ```{r}
