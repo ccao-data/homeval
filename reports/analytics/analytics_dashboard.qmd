@@ -53,7 +53,7 @@ start_date <- as.Date(ifelse(
 # Set the end day to today unless otherwise specified.
 end_date <- as.Date(ifelse(
   is.null(params$end_date),
-  Sys.Date(),
+  today(tzone = tz_local),
   params$end_date
 ))
 ```
