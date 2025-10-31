@@ -103,7 +103,7 @@
     },
     "arrow": {
       "Package": "arrow",
-      "Version": "21.0.0.1",
+      "Version": "22.0.0",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -121,7 +121,7 @@
         "utils",
         "vctrs"
       ],
-      "Hash": "ef54a31808517d2197e83dd57ca391e5"
+      "Hash": "833507e330290fc24b2d09f1737cab14"
     },
     "askpass": {
       "Package": "askpass",
@@ -1051,6 +1051,16 @@
       ],
       "Hash": "d5811dade9cd3a34a9038a45f1a59bae"
     },
+    "otel": {
+      "Package": "otel",
+      "Version": "0.2.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R"
+      ],
+      "Hash": "627d6993db1043703c0b084fa432f21f"
+    },
     "paws": {
       "Package": "paws",
       "Version": "0.9.0",
@@ -1331,19 +1341,20 @@
     },
     "promises": {
       "Package": "promises",
-      "Version": "1.3.3",
+      "Version": "1.4.0",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
+        "R",
         "R6",
-        "Rcpp",
         "fastmap",
         "later",
+        "lifecycle",
         "magrittr",
-        "rlang",
-        "stats"
+        "otel",
+        "rlang"
       ],
-      "Hash": "70157a4a73963da5779f9c67f4d31fd1"
+      "Hash": "e11326800dde656c4813afff144d8eb9"
     },
     "proxy": {
       "Package": "proxy",
@@ -2015,7 +2026,7 @@
     },
     "xfun": {
       "Package": "xfun",
-      "Version": "0.53",
+      "Version": "0.54",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -2024,11 +2035,11 @@
         "stats",
         "tools"
       ],
-      "Hash": "1befe97a0d56060b3964e3986d408df9"
+      "Hash": "d23c8a31e000d9865a8a6572f61da9ee"
     },
     "xml2": {
       "Package": "xml2",
-      "Version": "1.4.0",
+      "Version": "1.4.1",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -2037,7 +2048,7 @@
         "methods",
         "rlang"
       ],
-      "Hash": "3dfd9ffbe221af775cb37f95e7e893ec"
+      "Hash": "00841b97c923064fdffb4f20db816c98"
     },
     "yaml": {
       "Package": "yaml",

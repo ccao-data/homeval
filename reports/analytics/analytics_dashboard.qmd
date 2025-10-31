@@ -4,11 +4,23 @@ execute:
   echo: false
   warning: false
   message: false
+params:
+  # Dates must be inserted as YYYY-MM-DD. 
+  # Lists of IP's or excluded dates are separated by '-'.
+  # All params are optional and will default
+  # to querying the first day of data to the
+  # current day.
+  start_date: "2025-10-01"
+  excluded_dates:
+  end_date:
+  query_today: FALSE
+  ip_addresses_to_filter:  
 format:
   html:
     embed-resources: true
     grid:
       body-width: 1000px
+
 ---
 
 ```{r}
@@ -28,8 +40,27 @@ library(urltools)
 library(uaparserjs)
 ```
 
+```{r convert_params}
+tz_local <- "America/Chicago"
 
-```{r}
+# Set start day to the first day of data unless otherwise specified
+start_date <- as.Date(ifelse(
+  is.null(params$start_date),
+  "2025-09-04",
+  params$start_date
+))
+
+# Set the end day to today unless otherwise specified.
+end_date <- as.Date(ifelse(
+  is.null(params$end_date),
+  Sys.Date(),
+  params$end_date
+))
+
+```
+
+
+```{r download_assessment_card_data}
 conn <- dbConnect(noctua::athena(), rstudio_conn_tab = FALSE)
 
 cache_dir <- "data/assessment_card"
@@ -52,10 +83,7 @@ if (!file.exists(cache_file)) {
 }
 ```
 
-```{r}
-tz_local <- "America/Chicago"
-baseline_date <- as.Date("2025-09-04")
-
+```{r download_logs}
 log_group_name <- "/aws-cloudfront/pinval-prod"
 log_stream_name <- "CloudFront_E3AIN3GTEPCCYR"
 
@@ -125,9 +153,6 @@ fetch_events_for_day <- function(date_local) {
     )
 }
 
-# Today in local time
-today_local <- today(tzone = tz_local)
-
 # Look for already-cached files like logs_YYYY-MM-DD.parquet
 cached_files <- dir_ls(out_dir,
   regexp = "logs_\\d{4}-\\d{2}-\\d{2}\\.parquet$",
@@ -142,13 +167,25 @@ cached_dates <- str_match(
 cached_dates <- as.Date(na.omit(cached_dates))
 
 # Build the full sequence of dates
-all_dates <- seq(baseline_date, today_local, by = "day")
+all_dates <- seq(start_date, end_date, by = "day")
 
+# Remove days which should be excluded via the params.
 dates_to_fetch <- c(
-  # Always call today's date
-  setdiff(all_dates[all_dates != today_local], cached_dates),
-  today_local
-) %>% sort()
+  setdiff(
+    all_dates[
+      (all_dates != end_date) |
+        (is.null(params$query_today) || isTRUE(params$query_today))
+    ],
+    c(
+      cached_dates,
+      if (!is.null(params$excluded_dates))
+        as.Date(params$excluded_dates)
+    )
+  ),
+  if (is.null(params$query_today) || isTRUE(params$query_today)) end_date else NULL
+) |> sort()
+
+
 
 message(
   "Dates to fetch (", length(dates_to_fetch), "): ",
@@ -159,7 +196,7 @@ walk(dates_to_fetch, function(d) {
   out_file <- fs::path(out_dir, paste0("logs_", format(d), ".parquet"))
   message("Target file: ", fs::path_abs(out_file))
 
-  if (fs::file_exists(out_file) && d != today_local) {
+  if (fs::file_exists(out_file) && d != end_date) {
     message("Skipping ", format(d), " (already cached).")
     return(invisible(NULL))
   }
@@ -183,7 +220,7 @@ logs <- fs::dir_ls(
 ```
 
 
-```{r}
+```{r parse_data}
 fields <- c(
   "date", "time", "sc-bytes", "c-ip", "cs-method", "cs(Host)",
   "cs-uri-stem", "sc-status", "cs(Referer)", "cs(User-Agent)",
@@ -205,6 +242,30 @@ data <- logs %>%
   })) %>%
   select(-any_of(fields)) %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
+  filter(
+    # Logs are created and cached every time a request is made.
+    # This means that if cached files used a different query,
+    # there will be more cached files that are unnecessary.
+    # Because of this, we filter based on the params a second time.
+    if (!is.null(params$end_date) && nzchar(params$end_date))
+      date <= as.Date(params$end_date)
+    else TRUE,
+
+
+    if (!is.null(params$start_date) && nzchar(params$start_date))
+      date >= as.Date(params$start_date)
+    else TRUE,
+
+    # excluded dates (list of strings)
+    if (!is.null(params$excluded_dates) && length(params$excluded_dates) > 0)
+      !(date %in% as.Date(params$excluded_dates))
+    else TRUE,
+
+    # excluded IPs
+    if (!is.null(params$ip_addresses_to_filter) && length(params$ip_addresses_to_filter) > 0)
+      !(`c-ip` %in% params$ip_addresses_to_filter)
+    else TRUE
+  ) %>%
   mutate(
     pin = coalesce(
       str_extract(`cs-uri-stem`, "(?<=/)\\d{14}"),
@@ -251,7 +312,7 @@ NA values are for PINs which do not have a matching assessment_card record.
 ### Overall
 
 
-```{r}
+```{r class_overall}
 # We want to keep multi-cards just for the class related plots
 data_class <- data %>%
   filter(uri_indicator == "Query") %>%
@@ -291,7 +352,7 @@ data_class %>%
 
 ### Count Over Time
 
-```{r}
+```{r class_time}
 data_class %>%
   group_by(date, char_class) %>%
   summarise(request_count = n(), .groups = "drop") %>%
@@ -322,7 +383,7 @@ data_class %>%
 
 ### % Over Time
 
-```{r}
+```{r class_percent_time}
 data_class %>%
   mutate(date = as.Date(datetime)) %>%
   group_by(date, char_class) %>%
@@ -365,7 +426,7 @@ Extract year refers to the year which the user queried the data for.
 
 ### Overall
 
-```{r}
+```{r count_by_year}
 # This removes the duplicate cards from the previous join.
 data <- data %>%
   distinct(message, .keep_all = TRUE) %>%
@@ -393,7 +454,7 @@ data %>%
 
 ### Total Over Time
 
-```{r}
+```{r count_over_time}
 data %>%
   filter(
     uri_indicator == "Query"
@@ -427,7 +488,7 @@ data %>%
 
 ### % Over Time
 
-```{r}
+```{r percent_over_time}
 data %>%
   filter(
     uri_indicator == "Query"
@@ -471,7 +532,7 @@ data %>%
 
 ### Overall
 
-```{r}
+```{r eligibility_overall}
 data %>%
   filter(uri_indicator == "Query") %>%
   mutate(
@@ -502,7 +563,7 @@ data %>%
 
 This allows for duplicate reasons if the same query is deemed ineligible.
 
-```{r}
+```{r eligibility_reasons}
 ineligbility_data <- data %>%
   filter(
     uri_indicator == "Query",
@@ -541,7 +602,7 @@ ineligbility_data %>%
 
 ### Count Over Time
 
-```{r}
+```{r eligibility_time}
 ineligbility_data %>%
   count(reason_clean, date, name = "request_count") %>%
   plot_ly(
@@ -571,7 +632,7 @@ ineligbility_data %>%
 
 ### % Over Time
 
-```{r}
+```{r eligibility_percent_time}
 ineligbility_data %>%
   count(date, reason_report_ineligible, name = "request_count") %>%
   complete(date, reason_report_ineligible, fill = list(request_count = 0)) %>%
@@ -604,7 +665,7 @@ ineligbility_data %>%
 
 ---
 
-```{r}
+```{r prepare_township_year}
 df_counts <- data %>%
   filter(uri_indicator == "Query") %>%
   mutate(
@@ -649,7 +710,7 @@ years <- sort(unique(df_counts$extract_year))
 
 ### Overall
 
-```{r}
+```{r township_overall}
 data %>%
   filter(uri_indicator == "Query") %>%
   transmute(
@@ -678,13 +739,13 @@ data %>%
 
 
 ### 2024
-```{r}
+```{r 2024}
 plot_township_year(df_counts, "2024")
 ```
 
 ### 2025
 
-```{r}
+```{r 2025}
 plot_township_year(df_counts, "2025")
 ```
 :::
@@ -697,7 +758,7 @@ This map filters out any queries for PINs that do not have coordinates in the
 underlying data, which is always true for non-tri PINs. As such, any queries
 for non-tri PINs (e.g. north suburbs PINs in 2024) will not appear on this map.
 
-```{r}
+```{r map_distinct_pins}
 df <- data %>%
   filter(uri_indicator == "Query") %>%
   distinct(pin, .keep_all = TRUE) %>%
@@ -738,7 +799,7 @@ leaflet(df) %>%
 
 ### Excluding Static File Requests
 
-```{r}
+```{r http_status_excluding_static}
 data %>%
   mutate(
     date   = as.Date(datetime),
@@ -771,7 +832,7 @@ data %>%
 
 ### Including Static File Requests
 
-```{r}
+```{r http_status_including_static}
 data %>%
   mutate(
     date   = as.Date(datetime),
@@ -803,7 +864,7 @@ data %>%
 
 ### Recent Errors (non-2xx/3xx status codes)
 
-```{r}
+```{r recent_errors}
 data %>%
   # Keep only errors (not 2xx or 3xx)
   filter(!is.na(`sc-status`), !substr(`sc-status`, 1, 1) %in% c("2", "3")) %>%
@@ -836,7 +897,7 @@ data %>%
 
 ### Excluding Static File Requests
 
-```{r}
+```{r common_browsers_excluding_static}
 normalize_browser <- function(x) {
   x <- str_to_lower(str_squish(x))
   case_when(
@@ -878,7 +939,7 @@ data %>%
 
 ### Including Static File Requests
 
-```{r}
+```{r common_browsers_including_static}
 data %>%
   mutate(parsed = ua_parse(`cs(User-Agent)`)) %>%
   unnest_wider(parsed) %>%
@@ -909,7 +970,7 @@ data %>%
 
 ### Excluding Static File Requests
 
-```{r}
+```{r common_referer_excluding_static}
 data %>%
   filter(uri_indicator == "Query") %>%
   mutate(
@@ -939,7 +1000,7 @@ data %>%
 
 ### Including Static File Requests
 
-```{r}
+```{r common_referer_including_static}
 data %>%
   mutate(
     referer_raw = `cs(Referer)`,
@@ -977,7 +1038,7 @@ data %>%
 
 ### Excluding Static File Requests
 
-```{r}
+```{r cache_hit_excluding_static}
 data %>%
   filter(uri_indicator == "Query") %>%
   mutate(
@@ -1015,7 +1076,7 @@ data %>%
 
 ### Including Static File Requests
 
-```{r}
+```{r cache_hit_including_static}
 data %>%
   mutate(
     result_type = as.character(`x-edge-response-result-type`),
@@ -1058,7 +1119,7 @@ data %>%
 
 ### Time to First byte
 
-```{r}
+```{r time_to_first_byte}
 data %>%
   filter(uri_indicator != "Other") %>%
   mutate(
@@ -1080,7 +1141,7 @@ data %>%
 
 ### Time Taken
 
-```{r}
+```{r time_taken}
 data %>%
   filter(uri_indicator != "Other") %>%
   mutate(
