@@ -6,14 +6,14 @@ execute:
   message: false
 params:
   # Dates must be inserted as YYYY-MM-DD.
-  # Lists of IP's or excluded dates are separated by '-'.
+  # Lists of IP's or excluded dates are prefixed by '-'.
   # All params are optional and will default
   # to querying the first day of data to the
   # current day.
-  start_date: "2025-10-01"
+  start_date:
   excluded_dates:
   end_date:
-  refresh_today: FALSE
+  refresh_today:
   ip_addresses_to_filter:
 format:
   html:
@@ -215,13 +215,47 @@ walk(dates_to_fetch, function(d) {
   message("Verified exists: ", as.character(fs::file_size(out_file)), " bytes")
 })
 
-
+# List all log files
 logs <- fs::dir_ls(
   out_dir,
   regexp = "logs_\\d{4}-\\d{2}-\\d{2}\\.parquet$",
   type   = "file"
-) %>%
-  purrr::map_dfr(arrow::read_parquet)
+)
+
+# Extract date from filenames
+log_dates <- stringr::str_extract(basename(logs), "\\d{4}-\\d{2}-\\d{2}") %>%
+  as.Date()
+
+# Filter imports based on params
+logs_to_import <- tibble(file = logs, date = log_dates) %>%
+  dplyr::filter(
+    # End date filter
+    if (!is.null(params$end_date) &&
+      nzchar(params$end_date)) { # nolint
+      date <= as.Date(params$end_date)
+    } else {
+      TRUE
+    },
+
+    # Start date filter
+    if (!is.null(params$start_date) &&
+      nzchar(params$start_date)) { # nolint
+      date >= as.Date(params$start_date)
+    } else {
+      TRUE
+    },
+
+    # Excluded dates filter
+    if (!is.null(params$excluded_dates) &&
+      length(params$excluded_dates) > 0) { # nolint
+      !(date %in% as.Date(params$excluded_dates))
+    } else {
+      TRUE
+    }
+  )
+
+# Read only selected files
+logs <- purrr::map_dfr(logs_to_import$file, arrow::read_parquet)
 ```
 
 
@@ -248,31 +282,6 @@ data <- logs %>%
   select(-any_of(fields)) %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
   filter(
-    # Logs are created and cached every time a request is made.
-    # This means that if cached files used a different query,
-    # there will be more cached files that are unnecessary.
-    # Because of this, we filter based on the params a second time.
-    if (!is.null(params$end_date) &
-      nzchar(params$end_date)) { # nolint
-      date <= as.Date(params$end_date)
-    } else {
-      TRUE
-    },
-    if (!is.null(params$start_date) &
-      nzchar(params$start_date)) { # nolint
-      date >= as.Date(params$start_date)
-    } else {
-      TRUE
-    },
-
-    # excluded dates (list of strings)
-    if (!is.null(params$excluded_dates) &
-      length(params$excluded_dates) > 0) { # nolint
-      !(date %in% as.Date(params$excluded_dates))
-    } else {
-      TRUE
-    },
-
     # excluded IPs
     if (!is.null(params$ip_addresses_to_filter) &
       length(params$ip_addresses_to_filter) > 0) { # nolint
