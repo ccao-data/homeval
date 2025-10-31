@@ -13,7 +13,7 @@ params:
   start_date: "2025-10-01"
   excluded_dates:
   end_date:
-  query_today: FALSE
+  refresh_today: FALSE
   ip_addresses_to_filter:
 format:
   html:
@@ -173,7 +173,7 @@ dates_to_fetch <- c(
   setdiff(
     all_dates[
       (all_dates != end_date) |
-        (is.null(params$query_today) || isTRUE(params$query_today))
+        (is.null(params$refresh_today) || isTRUE(params$refresh_today))
     ],
     c(
       cached_dates,
@@ -182,8 +182,8 @@ dates_to_fetch <- c(
       }
     )
   ),
-  if (is.null(params$query_today) ||
-    isTRUE(params$query_today)) { # nolint
+  if (is.null(params$refresh_today) ||
+    isTRUE(params$refresh_today)) { # nolint
     end_date
   } else {
     NULL
