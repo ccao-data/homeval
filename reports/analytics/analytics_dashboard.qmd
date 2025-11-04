@@ -13,6 +13,7 @@ params:
   start_date:
   excluded_dates:
   end_date:
+  # If false, this will still return cached data for today
   refresh_today: true
   ip_addresses_to_filter:
 format:
@@ -49,6 +50,7 @@ ip_addresses <- c(
     character(0)
   }
 )
+
 excluded_dates <- c(
   if (!is.null(params$excluded_dates)) {
     as.Date(params$excluded_dates)
@@ -56,6 +58,7 @@ excluded_dates <- c(
     as.Date(character(0))
   }
 )
+
 refresh_today <- if (!is.null(params$refresh_today)) {
   params$refresh_today
 } else {
@@ -69,13 +72,10 @@ start_date <- as.Date(ifelse(
   params$start_date
 ))
 
+# Set end date to today unless otherwise specified
 end_date <- as.Date(
   if (is.null(params$end_date)) today(tzone = tz_local) else params$end_date
 )
-
-if (isFALSE(refresh_today) && end_date == today(tzone = tz_local)) {
-  end_date <- end_date - days(1)
-}
 ```
 
 
@@ -191,13 +191,8 @@ all_dates <- seq(start_date, end_date, by = "day")
 # Remove days which should be excluded via the params.
 dates_to_fetch <- c(
   setdiff(
-    all_dates[
-      (all_dates != end_date) |
-        isTRUE(params$refresh_today)
-    ],
-    excluded_dates
-  ),
-  if (isTRUE(params$refresh_today)) end_date else NULL
+    all_dates, excluded_dates
+  )
 ) %>%
   sort()
 
@@ -213,6 +208,12 @@ walk(dates_to_fetch, function(d) {
 
   if (fs::file_exists(out_file) & d != end_date) {
     message("Skipping ", format(d), " (already cached).")
+    return(invisible(NULL))
+  }
+
+  if (d == today(tzone = tz_local) & refresh_today == FALSE &
+    fs::file_exists(out_file)) { # no lintr
+    message("Skipping ", format(d), " (today's data, not refreshing).")
     return(invisible(NULL))
   }
 
