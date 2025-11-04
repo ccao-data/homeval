@@ -229,7 +229,7 @@ log_dates <- stringr::str_extract(basename(logs), "\\d{4}-\\d{2}-\\d{2}") %>%
 logs_to_import <- tibble(file = logs, date = log_dates) %>%
   dplyr::filter(
     # End date filter
-    if (!is.null(params$end_date) &
+    if (!is.null(params$end_date) &&
       nzchar(params$end_date)) { # nolint
       date <= as.Date(params$end_date)
     } else {
