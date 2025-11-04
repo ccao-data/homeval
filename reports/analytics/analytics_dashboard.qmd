@@ -13,7 +13,7 @@ params:
   start_date:
   excluded_dates:
   end_date:
-  refresh_today:
+  refresh_today: true
   ip_addresses_to_filter:
 format:
   html:
