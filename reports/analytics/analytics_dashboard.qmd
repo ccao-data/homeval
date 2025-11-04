@@ -42,6 +42,26 @@ library(uaparserjs)
 ```{r convert_params}
 tz_local <- "America/Chicago"
 
+ip_addresses <- c(
+  if (!is.null(params$ip_addresses_to_filter)) {
+    params$ip_addresses_to_filter
+  } else {
+    character(0)
+  }
+)
+excluded_dates <- c(
+  if (!is.null(params$excluded_dates)) {
+    as.Date(params$excluded_dates)
+  } else {
+    as.Date(character(0))
+  }
+)
+refresh_today <- if (!is.null(params$refresh_today)) {
+  params$refresh_today
+} else {
+  TRUE
+}
+
 # Set start day to the first day of data unless otherwise specified
 start_date <- as.Date(ifelse(
   is.null(params$start_date),
@@ -49,12 +69,13 @@ start_date <- as.Date(ifelse(
   params$start_date
 ))
 
-# Set the end day to today unless otherwise specified.
-end_date <- as.Date(ifelse(
-  is.null(params$end_date),
-  today(tzone = tz_local),
-  params$end_date
-))
+end_date <- as.Date(
+  if (is.null(params$end_date)) today(tzone = tz_local) else params$end_date
+)
+
+if (isFALSE(refresh_today) && end_date == today(tzone = tz_local)) {
+  end_date <- end_date - days(1)
+}
 ```
 
 
@@ -172,23 +193,13 @@ dates_to_fetch <- c(
   setdiff(
     all_dates[
       (all_dates != end_date) |
-        (is.null(params$refresh_today) || isTRUE(params$refresh_today))
+        isTRUE(params$refresh_today)
     ],
-    c(
-      cached_dates,
-      if (!is.null(params$excluded_dates)) {
-        as.Date(params$excluded_dates)
-      }
-    )
+    excluded_dates
   ),
-  if (is.null(params$refresh_today) ||
-    isTRUE(params$refresh_today)) { # nolint
-    end_date
-  } else {
-    NULL
-  }
-) %>% sort()
-
+  if (isTRUE(params$refresh_today)) end_date else NULL
+) %>%
+  sort()
 
 
 message(
@@ -227,33 +238,12 @@ log_dates <- stringr::str_extract(basename(logs), "\\d{4}-\\d{2}-\\d{2}") %>%
 
 # Filter imports based on params
 logs_to_import <- tibble(file = logs, date = log_dates) %>%
-  dplyr::filter(
-    # End date filter
-    if (!is.null(params$end_date) &&
-      nzchar(params$end_date)) { # nolint
-      date <= as.Date(params$end_date)
-    } else {
-      TRUE
-    },
-
-    # Start date filter
-    if (!is.null(params$start_date) &
-      nzchar(params$start_date)) { # nolint
-      date >= as.Date(params$start_date)
-    } else {
-      TRUE
-    },
-
-    # Excluded dates filter
-    if (!is.null(params$excluded_dates) &
-      length(params$excluded_dates) > 0) { # nolint
-      !(date %in% as.Date(params$excluded_dates))
-    } else {
-      TRUE
-    }
+  filter(
+    date <= end_date,
+    date >= start_date,
+    !(date %in% excluded_dates)
   )
 
-# Read only selected files
 logs <- purrr::map_dfr(logs_to_import$file, arrow::read_parquet)
 ```
 
@@ -281,13 +271,7 @@ data <- logs %>%
   select(-any_of(fields)) %>%
   tidyr::unnest_wider(parsed, names_repair = "minimal") %>%
   filter(
-    # excluded IPs
-    if (!is.null(params$ip_addresses_to_filter) &
-      length(params$ip_addresses_to_filter) > 0) { # nolint
-      !(`c-ip` %in% params$ip_addresses_to_filter)
-    } else {
-      TRUE
-    }
+    !(`c-ip` %in% params$ip_addresses_to_filter)
   ) %>%
   mutate(
     pin = coalesce(
