@@ -10,9 +10,9 @@ params:
   # All params are optional and will default
   # to querying the first day of data to the
   # current day.
-  start_date: "2025-10-20"
+  start_date:
   excluded_dates:
-  end_date: "2025-11-03"
+  end_date:
   # If false, this will still return cached data for today
   refresh_today: true
   ip_addresses_to_filter:
