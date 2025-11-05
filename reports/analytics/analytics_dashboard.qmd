@@ -212,7 +212,7 @@ walk(dates_to_fetch, function(d) {
   }
 
   if (d == today(tzone = tz_local) & refresh_today == FALSE &
-    fs::file_exists(out_file)) { # no lintr
+    fs::file_exists(out_file)) { # nolint
     message("Skipping ", format(d), " (today's data, not refreshing).")
     return(invisible(NULL))
   }
