@@ -10,9 +10,9 @@ params:
   # All params are optional and will default
   # to querying the first day of data to the
   # current day.
-  start_date:
+  start_date: "2025-10-20"
   excluded_dates:
-  end_date:
+  end_date: "2025-11-03"
   # If false, this will still return cached data for today
   refresh_today: true
   ip_addresses_to_filter:
@@ -212,8 +212,9 @@ walk(dates_to_fetch, function(d) {
     return(invisible(NULL))
   }
 
-  if (d == today_local) & refresh_today == FALSE &
-    fs::file_exists(out_file)) { # nolint
+  if ((d == today_local) &
+    (refresh_today == FALSE) & # nolint
+    fs::file_exists(out_file)) {
     message("Skipping ", format(d), " (today's data, not refreshing).")
     return(invisible(NULL))
   }
