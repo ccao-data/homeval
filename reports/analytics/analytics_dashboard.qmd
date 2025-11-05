@@ -42,6 +42,7 @@ library(uaparserjs)
 
 ```{r convert_params}
 tz_local <- "America/Chicago"
+today_local <- today(tzone = tz_local)
 
 ip_addresses <- c(
   if (!is.null(params$ip_addresses_to_filter)) {
@@ -206,12 +207,12 @@ walk(dates_to_fetch, function(d) {
   out_file <- fs::path(out_dir, paste0("logs_", format(d), ".parquet"))
   message("Target file: ", fs::path_abs(out_file))
 
-  if (fs::file_exists(out_file) & d != end_date) {
+  if (fs::file_exists(out_file) & d != today_local) {
     message("Skipping ", format(d), " (already cached).")
     return(invisible(NULL))
   }
 
-  if (d == today(tzone = tz_local) & refresh_today == FALSE &
+  if (d == today_local) & refresh_today == FALSE &
     fs::file_exists(out_file)) { # nolint
     message("Skipping ", format(d), " (today's data, not refreshing).")
     return(invisible(NULL))
