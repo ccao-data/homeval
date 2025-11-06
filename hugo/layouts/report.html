@@ -135,14 +135,14 @@
               be most significant for your estimated home value in {{ .Params.assessment_year }}.
               The top of the report shows the location and characteristics of your home. The
               middle section of the report compares the location and characteristics of the
-              top five sales to your home’s location and characteristics. At the end,
-              the report summarizes the prices of the top five sales and compares them
+              most significant sales to your home’s location and characteristics. At the end,
+              the report summarizes the prices of the most significant sales and compares them
               to your home’s estimated value.
             </p>
             <p>
               If you have a background in statistics or computer science, you might be interested in our article
               <a href="https://ccao-data.github.io/lightsnip/articles/finding-comps.html" target="_blank">Finding comparables with LightGBM</a>.
-              This article provides technical details about how we found the top five most significant sales for each home.
+              This article provides technical details about how we found the most significant sales for each home.
             </p>
           </div>
         </div>
@@ -454,7 +454,7 @@
   {{ define "card-comps" }}
 
   <!-- Comp map -->
-  <h2 class="mb-3">Top 5 Most Significant Sales</h2>
+  <h2 class="mb-3">Most Significant Sales</h2>
   <p>
     This map shows your home along with five sales that an
     algorithm identified as being significant for the model's estimate
@@ -476,14 +476,14 @@
     class="mt-4"
     id="sale-characteristics-{{ .card.card_num }}"
   >
-    Characteristics for Top 5 Most Significant Sales
+    Characteristics for Most Significant Sales
   </h3>
   <p>
     "Characteristics" are data points about a home that help the
     {{ template "tt" (dict "label" "model" "description" .Params.var_info.model.description) }}
     compare it to recent sales. The table below shows all of the characteristics
     that the model used to estimate your home value alongside the
-    characteristics for the top five sales.
+    characteristics for the most significant sales.
   </p>
   <p>
     Each characteristic has a
@@ -678,10 +678,10 @@
   </div>
 
   <h3 class="mb-3">
-    Summary of the Top 5 Most Significant Sales
+    Summary of the Most Significant Sales
   </h3>
   <p>
-    The top five most significant sales took place
+    The most significant sales took place
     {{ .card.comp_summary.sale_year_range_prefix }}
     <strong>{{ .card.comp_summary.sale_year_range }}</strong>.
     These sale prices ranged from
