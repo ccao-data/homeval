@@ -11,7 +11,7 @@ params:
   # to querying the first day of data to the
   # current day.
   start_date:
-  excluded_dates:
+  excluded_dates: 
   end_date:
   # If false, this will still return cached data for today
   refresh_today: true
@@ -186,17 +186,20 @@ cached_dates <- str_match(
 
 cached_dates <- as.Date(na.omit(cached_dates))
 
+# Remove today from cached dates if refresh_today is TRUE
+if (refresh_today == TRUE) {
+  cached_dates <- setdiff(cached_dates, today_local)
+}
+
 # Build the full sequence of dates
 all_dates <- seq(start_date, end_date, by = "day")
 
-# Remove days which should be excluded via the params.
-dates_to_fetch <- c(
-  setdiff(
-    all_dates, excluded_dates
-  )
-) %>%
-  sort()
-
+# Remove days which should be excluded via the params and 
+# cached files.
+dates_to_fetch <- setdiff(
+  setdiff(all_dates, cached_dates),
+  excluded_dates
+)
 
 message(
   "Dates to fetch (", length(dates_to_fetch), "): ",
@@ -206,18 +209,6 @@ message(
 walk(dates_to_fetch, function(d) {
   out_file <- fs::path(out_dir, paste0("logs_", format(d), ".parquet"))
   message("Target file: ", fs::path_abs(out_file))
-
-  if (fs::file_exists(out_file) & d != today_local) {
-    message("Skipping ", format(d), " (already cached).")
-    return(invisible(NULL))
-  }
-
-  if ((d == today_local) &
-    (refresh_today == FALSE) & # nolint
-    fs::file_exists(out_file)) {
-    message("Skipping ", format(d), " (today's data, not refreshing).")
-    return(invisible(NULL))
-  }
 
   message("Fetching ", format(d), " ...")
   df <- fetch_events_for_day(d)
