@@ -11,7 +11,7 @@ params:
   # to querying the first day of data to the
   # current day.
   start_date:
-  excluded_dates: 
+  excluded_dates:
   end_date:
   # If false, this will still return cached data for today
   refresh_today: true
@@ -194,7 +194,7 @@ if (refresh_today == TRUE) {
 # Build the full sequence of dates
 all_dates <- seq(start_date, end_date, by = "day")
 
-# Remove days which should be excluded via the params and 
+# Remove days which should be excluded via the params and
 # cached files.
 dates_to_fetch <- setdiff(
   setdiff(all_dates, cached_dates),
