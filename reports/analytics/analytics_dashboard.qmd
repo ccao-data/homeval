@@ -75,7 +75,7 @@ start_date <- as.Date(ifelse(
 
 # Set end date to today unless otherwise specified
 end_date <- as.Date(
-  if (is.null(params$end_date)) today(tzone = tz_local) else params$end_date
+  if (is.null(params$end_date)) today_local else params$end_date
 )
 ```
 
@@ -186,8 +186,8 @@ cached_dates <- str_match(
 
 cached_dates <- as.Date(na.omit(cached_dates))
 
-# Remove today from cached dates if refresh_today is TRUE
-if (refresh_today == TRUE) {
+# Remove today from cached dates if refresh_today is not FALSE
+if (refresh_today != FALSE) {
   cached_dates <- setdiff(cached_dates, today_local)
 }
 
