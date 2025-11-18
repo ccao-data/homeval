@@ -4,4 +4,4 @@
 # need to switch to dev tables for testing
 HOMEVAL_ASSESSMENT_CARD_TABLE = "pinval.vw_assessment_card"
 HOMEVAL_COMP_TABLE = "pinval.vw_comp"
-HOMEVAL_DATA_DICT_TABLE = "pinval.vars_dict"
+HOMEVAL_DATA_DICT_TABLE = "z_ci_update_vars_dict_bldg_sqft_desc_pinval.vars_dict"
