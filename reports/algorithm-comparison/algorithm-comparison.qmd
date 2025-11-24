@@ -835,6 +835,7 @@ plot_ind_char_obs <- function(
   )
 }
 
+
 ```
 
 ## Topline Aggregate Stats
@@ -900,55 +901,47 @@ merged_no_flags %>%
 # of the target PIN
 comps_by_pin_sales_agg <- merged_no_flags[
   comp_num <= keep_top_n_comps & !is.na(target_sale_price),
-][, .(
-  pred_pin_final_fmv = data.table::first(pred_pin_final_fmv),
-  target_sale_price = data.table::first(target_sale_price),
-  avg_comp_score = mean(comp_score, na.rm = TRUE),
-  wt_avg_comp_sale_price = weighted.mean(
-    comp_sale_price, comp_score,
-    na.rm = TRUE
+][
+  , .(
+    pred_pin_final_fmv   = data.table::first(pred_pin_final_fmv),
+    target_sale_price    = data.table::first(target_sale_price),
+
+    avg_comp_score       = mean(comp_score, na.rm = TRUE),
+    avg_comp_sale_price  = mean(comp_sale_price, na.rm = TRUE),
+
+    med_comp_dist_ft     = targ_to_comp_dist_ft %>%
+      as.vector() %>%
+      median(na.rm = TRUE),
+
+    avg_comp_dist_ft     = targ_to_comp_dist_ft %>%
+      as.vector() %>%
+      mean(na.rm = TRUE),
+
+    target_char_yrblt    = data.table::first(target_char_yrblt),
+    avg_comp_char_yrblt  = mean(comp_char_yrblt, na.rm = TRUE),
+
+    target_char_bldg_sf  = data.table::first(target_char_bldg_sf),
+    avg_comp_char_bldg_sf = mean(comp_char_bldg_sf, na.rm = TRUE),
+
+    target_char_land_sf  = data.table::first(target_char_land_sf),
+    avg_comp_char_land_sf = mean(comp_char_land_sf, na.rm = TRUE),
+
+    target_char_beds     = data.table::first(target_char_beds),
+    avg_comp_char_beds   = mean(comp_char_beds, na.rm = TRUE),
+
+    target_char_fbath    = data.table::first(target_char_fbath),
+    avg_comp_char_fbath  = mean(comp_char_fbath, na.rm = TRUE),
+
+    target_char_hbath    = data.table::first(target_char_hbath),
+    avg_comp_char_hbath  = mean(comp_char_hbath, na.rm = TRUE),
+
+    description          = data.table::first(description)
   ),
-  med_comp_dist_ft = targ_to_comp_dist_ft %>%
-    as.vector() %>%
-    median(na.rm = TRUE),
-  wt_avg_comp_dist_ft = targ_to_comp_dist_ft %>%
-    as.vector() %>%
-    weighted.mean(comp_score, na.rm = TRUE),
-  target_char_yrblt = data.table::first(target_char_yrblt),
-  wt_avg_comp_char_yrblt = weighted.mean(
-    comp_char_yrblt, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_bldg_sf = data.table::first(target_char_bldg_sf),
-  wt_avg_comp_char_bldg_sf = weighted.mean(
-    comp_char_bldg_sf, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_land_sf = data.table::first(target_char_land_sf),
-  wt_avg_comp_char_land_sf = weighted.mean(
-    comp_char_land_sf, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_beds = data.table::first(target_char_beds),
-  wt_avg_comp_char_beds = weighted.mean(
-    comp_char_beds, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_fbath = data.table::first(target_char_fbath),
-  wt_avg_comp_char_fbath = weighted.mean(
-    comp_char_fbath, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_hbath = data.table::first(target_char_hbath),
-  wt_avg_comp_char_hbath = weighted.mean(
-    comp_char_hbath, comp_score,
-    na.rm = TRUE
-  ),
-  description = data.table::first(description)
-  ),
-  by = c("run_id", "target_pin", "target_township_code", "target_class")][
+  by = c("run_id", "target_pin", "target_township_code", "target_class")
+][
   , target_township_name := ccao::town_convert(target_township_code)
 ]
+
 
 # Take a sample of target properties with sales to plot using plotly. Sample
 # because using all properties makes the plots too large to render
@@ -966,15 +959,14 @@ comps_by_pin_sales_agg_sample <- comps_by_pin_sales_agg %>%
 
 ### Sale Price By Township
 
-
 ```{r plot_targ_sale_v_avg_comp_town, out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "target_sale_price",
-  "wt_avg_comp_sale_price",
+  "avg_comp_sale_price",
   "target_township_name",
   "Target Sale Price",
-  "Wtd. Avg. Comp Sale Price",
+  "Avg. Comp Sale Price",
   "Township",
   id_prefix = "sale_price_township"
 )
@@ -986,10 +978,10 @@ plot_ind_obs(
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "target_sale_price",
-  "wt_avg_comp_sale_price",
+  "avg_comp_sale_price",
   "target_class",
   "Target Sale Price",
-  "Wtd. Avg. Comp Sale Price",
+  "Avg. Comp Sale Price",
   "Class",
   id_prefix = "sale_price_class"
 )
@@ -1001,10 +993,10 @@ plot_ind_obs(
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
-  "wt_avg_comp_sale_price",
+  "avg_comp_sale_price",
   "target_township_name",
   "Model Estimated FMV",
-  "Wtd. Avg. Comp Sale Price",
+  "Avg. Comp Sale Price",
   "Township",
   id_prefix = "pred_price_township"
 )
@@ -1016,10 +1008,10 @@ plot_ind_obs(
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
-  "wt_avg_comp_sale_price",
+  "avg_comp_sale_price",
   "target_class",
   "Model Estimated FMV",
-  "Wtd. Avg. Comp Sale Price",
+  "Avg. Comp Sale Price",
   "Class",
   id_prefix = "pred_price_class"
 )
@@ -1067,7 +1059,7 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
-  "wt_avg_comp_dist_ft",
+  "avg_comp_dist_ft",
   "target_township_name",
   "Model Estimated FMV",
   "Wt. Avg. Comp Distance (ft)",
@@ -1084,7 +1076,7 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
-  "wt_avg_comp_dist_ft",
+  "avg_comp_dist_ft",
   "target_class",
   "Model Estimated FMV",
   "Wt. Avg. Comp Distance (ft)",
@@ -1100,10 +1092,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_yrblt",
-  "wt_avg_comp_char_yrblt",
+  "avg_comp_char_yrblt",
   "target_township_name",
   "Target Yrblt.",
-  "Wtd. Avg. Comp Yrblt.",
+  "Avg. Comp Yrblt.",
   "Township",
   id_prefix = "yrblt_township"
 )
@@ -1116,10 +1108,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_yrblt",
-  "wt_avg_comp_char_yrblt",
+  "avg_comp_char_yrblt",
   "target_class",
   "Target Yrblt.",
-  "Wtd. Avg. Comp Yrblt.",
+  "Avg. Comp Yrblt.",
   "Class",
   id_prefix = "yrblt_class"
 )
@@ -1131,10 +1123,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_bldg_sf",
-  "wt_avg_comp_char_bldg_sf",
+  "avg_comp_char_bldg_sf",
   "target_township_name",
   "Target Bldg. S.F.",
-  "Wtd. Avg. Comp Bldg. S.F.",
+  "Avg. Comp Bldg. S.F.",
   "Township",
   id_prefix = "bldg_sf_township"
 )
@@ -1146,10 +1138,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_bldg_sf",
-  "wt_avg_comp_char_bldg_sf",
+  "avg_comp_char_bldg_sf",
   "target_class",
   "Target Bldg. S.F.",
-  "Wtd. Avg. Comp Bldg. S.F.",
+  "Avg. Comp Bldg. S.F.",
   "Class",
   id_prefix = "bldg_sf_class"
 )
@@ -1162,10 +1154,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_land_sf",
-  "wt_avg_comp_char_land_sf",
+  "avg_comp_char_land_sf",
   "target_township_name",
   "Target Land S.F.",
-  "Wtd. Avg. Comp Land S.F.",
+  "Avg. Comp Land S.F.",
   "Township",
   id_prefix = "land_sf_township"
 )
@@ -1178,10 +1170,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_land_sf",
-  "wt_avg_comp_char_land_sf",
+  "avg_comp_char_land_sf",
   "target_class",
   "Target Land S.F.",
-  "Wtd. Avg. Comp Land S.F.",
+  "Avg. Comp Land S.F.",
   "Class",
   id_prefix = "land_sf_class"
 )
@@ -1194,10 +1186,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_beds",
-  "wt_avg_comp_char_beds",
+  "avg_comp_char_beds",
   "target_township_name",
   "Target Beds",
-  "Wtd. Avg. Comp Beds",
+  "Avg. Comp Beds",
   "Township",
   id_prefix = "beds_township"
 )
@@ -1210,10 +1202,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_beds",
-  "wt_avg_comp_char_beds",
+  "avg_comp_char_beds",
   "target_class",
   "Target Beds",
-  "Wtd. Avg. Comp Beds",
+  "Avg. Comp Beds",
   "Class",
   id_prefix = "beds_class"
 )
@@ -1226,10 +1218,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_fbath",
-  "wt_avg_comp_char_fbath",
+  "avg_comp_char_fbath",
   "target_township_name",
   "Target Full Baths",
-  "Wtd. Avg. Comp Full Baths",
+  "Avg. Comp Full Baths",
   "Township",
   id_prefix = "fbath_township"
 )
@@ -1241,10 +1233,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_fbath",
-  "wt_avg_comp_char_fbath",
+  "avg_comp_char_fbath",
   "target_class",
   "Target Full Baths",
-  "Wtd. Avg. Comp Full Baths",
+  "Avg. Comp Full Baths",
   "Class",
   id_prefix = "fbath_class"
 )
@@ -1257,10 +1249,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_hbath",
-  "wt_avg_comp_char_hbath",
+  "avg_comp_char_hbath",
   "target_township_name",
   "Target Half Baths",
-  "Wtd. Avg. Comp Half Baths",
+  "Avg. Comp Half Baths",
   "Township",
   id_prefix = "hbath_township"
 )
@@ -1273,10 +1265,10 @@ plot_ind_char_obs(
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_hbath",
-  "wt_avg_comp_char_hbath",
+  "avg_comp_char_hbath",
   "target_class",
   "Target Half Baths",
-  "Wtd. Avg. Comp Half Baths",
+  "Avg. Comp Half Baths",
   "Class",
   id_prefix = "hbath_class"
 )
