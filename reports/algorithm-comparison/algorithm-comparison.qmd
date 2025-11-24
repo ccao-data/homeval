@@ -28,6 +28,7 @@ library(dtplyr)
 library(DT)
 library(glue)
 library(gt)
+library(htmltools)
 library(matrixStats)
 library(noctua)
 library(plotly)
@@ -436,6 +437,87 @@ gc()
 ```
 
 ```{r helper_funcs}
+
+format_agg_stats <- function(df) {
+
+  df %>%
+    datatable(
+      rownames = FALSE,
+      filter = "none",
+      selection = "none",
+      escape = FALSE,
+      colnames = c(
+        "Num. Targets" = "n",
+        "Num. Sales" = "n_sales",
+        "Med. PIN Pred. Price" = "med_pin_pred_price",
+        "Med. Target Sale Price" = "med_target_sale_price",
+        "Wt. Med. Comp. Sale Price" = "wt_med_comp_sale_price",
+        "Med. Target Sale Date" = "med_target_sale_date",
+        "Wt. Med. Comp. Sale Date" = "wt_med_comp_sale_date",
+        "Med. Comp. Dist. (ft)" = "med_comp_dist_ft",
+        "Avg. Comp. Dist. (ft)" = "avg_comp_dist_ft",
+        "Med. Comp. Score" = "med_comp_score",
+        "Corr. Comp. PIN Pred." = "corr_comp_pin_pred",
+        "Corr. Comp. Target Sale" = "corr_comp_target_sale",
+        "Med. Comp. Yrblt. Dist. (S.D.)" = "med_comp_dist_yrblt_sd",
+        "Avg. Comp. Yrblt. Dist. (S.D.)" = "avg_comp_dist_yrblt_sd",
+        "Med. Comp. Log Bldg. S.F. Dist. (S.D.)" = "med_comp_dist_bldg_sf_sd",
+        "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)" = "avg_comp_dist_bldg_sf_sd",
+        "Med. Comp. Log Land S.F. Dist. (S.D.)" = "med_comp_dist_land_sf_sd",
+        "Avg. Comp. Log Land S.F. Dist. (S.D.)" = "avg_comp_dist_land_sf_sd",
+        "Med. Comp. Beds Dist. (S.D.)" = "med_comp_dist_beds_sd",
+        "Avg. Comp. Beds Dist. (S.D.)" = "avg_comp_dist_beds_sd",
+        "Med. Comp. Full Bath Dist. (S.D.)" = "med_comp_dist_fbath_sd",
+        "Avg. Comp. Full Bath Dist. (S.D.)" = "avg_comp_dist_fbath_sd",
+        "Med. Comp. Half Bath Dist. (S.D.)" = "med_comp_dist_hbath_sd",
+        "Avg. Comp. Half Bath Dist. (S.D.)" = "avg_comp_dist_hbath_sd"
+      ),
+      options = list(
+        autoWidth = TRUE,
+        paging = FALSE,
+        searching = FALSE,
+        info = FALSE
+      )
+    ) %>%
+    formatRound(
+      c(
+        "Med. Comp. Score", "Corr. Comp. PIN Pred.",
+        "Corr. Comp. Target Sale"
+      ),
+      digits = 2
+    ) %>%
+    formatRound(
+      c(
+        "Num. Targets", "Num. Sales",
+        "Med. Comp. Dist. (ft)", "Avg. Comp. Dist. (ft)"
+      ),
+      digits = 0
+    ) %>%
+    formatRound(
+      c(
+        "Med. Comp. Yrblt. Dist. (S.D.)", "Avg. Comp. Yrblt. Dist. (S.D.)",
+        "Med. Comp. Log Bldg. S.F. Dist. (S.D.)",
+        "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)",
+        "Med. Comp. Log Land S.F. Dist. (S.D.)",
+        "Avg. Comp. Log Land S.F. Dist. (S.D.)",
+        "Med. Comp. Beds Dist. (S.D.)", "Avg. Comp. Beds Dist. (S.D.)",
+        "Med. Comp. Full Bath Dist. (S.D.)",
+        "Avg. Comp. Full Bath Dist. (S.D.)",
+        "Med. Comp. Half Bath Dist. (S.D.)",
+        "Avg. Comp. Half Bath Dist. (S.D.)"
+      ),
+      digits = 3
+    ) %>%
+    formatCurrency(
+      c(
+        "Med. PIN Pred. Price", "Med. Target Sale Price",
+        "Wt. Med. Comp. Sale Price"
+      ),
+      currency = "$",
+      digits = 0
+    )
+}
+
 # Function to calculate aggregate comp statistics per group and number of comps
 gen_agg_stats <- function(df, group_cols, n) {
   df <- data.table::as.data.table(df)
@@ -515,203 +597,131 @@ gen_agg_stats <- function(df, group_cols, n) {
   return(out[])
 }
 
-# Function to format the aggregate comp statistics for display in a datatable
-format_agg_stats <- function(df) {
-  df %>%
-    datatable(
-      rownames = FALSE,
-      filter = "none",
-      selection = "none",
-      escape = FALSE,
-      colnames = c(
-        "Num. Targets" = "n",
-        "Num. Sales" = "n_sales",
-        "Med. PIN Pred. Price" = "med_pin_pred_price",
-        "Med. Target Sale Price" = "med_target_sale_price",
-        "Wt. Med. Comp. Sale Price" = "wt_med_comp_sale_price",
-        "Med. Target Sale Date" = "med_target_sale_date",
-        "Wt. Med. Comp. Sale Date" = "wt_med_comp_sale_date",
-        "Med. Comp. Dist. (ft)" = "med_comp_dist_ft",
-        "Avg. Comp. Dist. (ft)" = "avg_comp_dist_ft",
-        "Med. Comp. Score" = "med_comp_score",
-        "Corr. Comp. PIN Pred." = "corr_comp_pin_pred",
-        "Corr. Comp. Target Sale" = "corr_comp_target_sale",
-        "Med. Comp. Yrblt. Dist. (S.D.)" = "med_comp_dist_yrblt_sd",
-        "Avg. Comp. Yrblt. Dist. (S.D.)" = "avg_comp_dist_yrblt_sd",
-        "Med. Comp. Log Bldg. S.F. Dist. (S.D.)" = "med_comp_dist_bldg_sf_sd",
-        "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)" = "avg_comp_dist_bldg_sf_sd",
-        "Med. Comp. Log Land S.F. Dist. (S.D.)" = "med_comp_dist_land_sf_sd",
-        "Avg. Comp. Log Land S.F. Dist. (S.D.)" = "avg_comp_dist_land_sf_sd",
-        "Med. Comp. Beds Dist. (S.D.)" = "med_comp_dist_beds_sd",
-        "Avg. Comp. Beds Dist. (S.D.)" = "avg_comp_dist_beds_sd",
-        "Med. Comp. Full Bath Dist. (S.D.)" = "med_comp_dist_fbath_sd",
-        "Avg. Comp. Full Bath Dist. (S.D.)" = "avg_comp_dist_fbath_sd",
-        "Med. Comp. Half Bath Dist. (S.D.)" = "med_comp_dist_hbath_sd",
-        "Avg. Comp. Half Bath Dist. (S.D.)" = "avg_comp_dist_hbath_sd"
-      ),
-      options = list(
-        autoWidth = TRUE,
-        paging = FALSE,
-        searching = FALSE,
-        info = FALSE
-      )
-    ) %>%
-    formatRound(
-      c(
-        "Med. Comp. Score", "Corr. Comp. PIN Pred.",
-        "Corr. Comp. Target Sale"
-      ),
-      digits = 2
-    ) %>%
-    formatRound(
-      c(
-        "Num. Targets", "Num. Sales",
-        "Med. Comp. Dist. (ft)", "Avg. Comp. Dist. (ft)"
-      ),
-      digits = 0
-    ) %>%
-    formatRound(
-      c(
-        "Med. Comp. Yrblt. Dist. (S.D.)", "Avg. Comp. Yrblt. Dist. (S.D.)",
-        "Med. Comp. Log Bldg. S.F. Dist. (S.D.)",
-        "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)",
-        "Med. Comp. Log Land S.F. Dist. (S.D.)",
-        "Avg. Comp. Log Land S.F. Dist. (S.D.)",
-        "Med. Comp. Beds Dist. (S.D.)", "Avg. Comp. Beds Dist. (S.D.)",
-        "Med. Comp. Full Bath Dist. (S.D.)",
-        "Avg. Comp. Full Bath Dist. (S.D.)",
-        "Med. Comp. Half Bath Dist. (S.D.)",
-        "Avg. Comp. Half Bath Dist. (S.D.)"
-      ),
-      digits = 3
-    ) %>%
-    formatCurrency(
-      c(
-        "Med. PIN Pred. Price", "Med. Target Sale Price",
-        "Wt. Med. Comp. Sale Price"
-      ),
-      currency = "$",
-      digits = 0
-    )
-}
-
-# Function to help create a scatter plot comparing target/comp/predicted price
 plot_ind_obs <- function(df, x, y, grp, x_lab, y_lab, grp_lab) {
-  plt <- df %>%
-    ggplot() +
-    geom_point(
-      aes(
-        group = target_pin,
-        x = get(x),
-        y = get(y),
-        color = get(grp),
-        text = paste0(
-          "Township: ", target_township_name, "<br>",
-          "PIN: ", target_pin, "<br>",
-          "Class: ", target_class, "<br>",
-          "Sale Price: ",
-          scales::dollar(target_sale_price, accuracy = 1), "<br>",
-          "Estimate FMV: ",
-          scales::dollar(pred_pin_final_fmv, accuracy = 1), "<br>",
-          "Avg. Comp. Price: ",
-          scales::dollar(wt_avg_comp_sale_price, accuracy = 1), "<br>",
-          "Avg. Comp. Score: ",
-          scales::percent(avg_comp_score, accuracy = 1)
-        )
-      )
-    ) +
-    geom_abline(slope = 1, intercept = 0) +
-    scale_x_continuous(
-      name = x_lab,
-      labels = scales::label_dollar(
-        accuracy = 1,
-        scale = 1 / 1000,
-        suffix = "K"
-      ),
-      n.breaks = 8,
-      limits = c(0, 1.5e6)
-    ) +
-    scale_y_continuous(
-      name = y_lab,
-      labels = scales::label_dollar(
-        accuracy = 1,
-        scale = 1 / 1000,
-        suffix = "K"
-      ),
-      n.breaks = 8,
-      limits = c(0, 1.5e6)
-    ) +
-    labs(color = grp_lab) +
-    theme_minimal()
 
-  gplt <- ggplotly(plt, tooltip = "text")
+  desc_vals <- df %>%
+    dplyr::distinct(description) %>%
+    dplyr::pull(description)
 
-  return(gplt)
+  purrr::map(
+    stats::setNames(desc_vals, desc_vals),
+    function(desc_val) {
+
+      df_desc <- df %>% dplyr::filter(description == desc_val)
+
+      plt <- df_desc %>%
+        ggplot() +
+        geom_point(
+          aes(
+            group = target_pin,
+            x = get(x),
+            y = get(y),
+            color = get(grp),
+            text = paste0(
+              "Township: ", target_township_name, "<br>",
+              "PIN: ", target_pin, "<br>",
+              "Class: ", target_class, "<br>",
+              "Sale Price: ",
+              scales::dollar(target_sale_price, accuracy = 1), "<br>",
+              "Estimate FMV: ",
+              scales::dollar(pred_pin_final_fmv, accuracy = 1), "<br>",
+              "Avg. Comp. Price: ",
+              scales::dollar(wt_avg_comp_sale_price, accuracy = 1), "<br>",
+              "Avg. Comp. Score: ",
+              scales::percent(avg_comp_score, accuracy = 1)
+            )
+          )
+        ) +
+        geom_abline(slope = 1, intercept = 0) +
+        scale_x_continuous(
+          name = x_lab,
+          labels = scales::label_dollar(accuracy = 1, scale = 1/1000, suffix = "K"),
+          n.breaks = 8,
+          limits = c(0, 1.5e6)
+        ) +
+        scale_y_continuous(
+          name = y_lab,
+          labels = scales::label_dollar(accuracy = 1, scale = 1/1000, suffix = "K"),
+          n.breaks = 8,
+          limits = c(0, 1.5e6)
+        ) +
+        labs(
+          title = paste("Run:", desc_val),
+          color = grp_lab
+        ) +
+        theme_minimal()
+
+      ggplotly(plt, tooltip = "text")
+    }
+  )
 }
 
-# Version of plot_ind_obs for characteristics
 plot_ind_char_obs <- function(
-    df, x, y, grp, x_lab, y_lab, grp_lab, slope = 1, labels = waiver()) {
-  plt <- df %>%
-    ggplot() +
-    geom_point(
-      aes(
-        group = target_pin,
-        x = get(x),
-        y = get(y),
-        color = get(grp),
-        text = paste0(
-          "Township: ", target_township_name, "<br>",
-          "PIN: ", target_pin, "<br>",
-          "Class: ", target_class, "<br>",
-          "Estimate FMV: ",
-          scales::dollar(pred_pin_final_fmv, accuracy = 1), "<br>",
-          "Median Comp. Dist. (ft.): ",
-          round(med_comp_dist_ft, 2), "<br>",
-          "Wt. Avg. Comp. Dist. (ft.): ",
-          round(wt_avg_comp_dist_ft, 2), "<br>",
-          "Target Yrblt.: ",
-          target_char_yrblt, "<br>",
-          "Wt. Avg. Comp. Yrblt.: ",
-          round(wt_avg_comp_char_yrblt, 2), "<br>",
-          "Target Bldg. S.F.: ",
-          target_char_bldg_sf, "<br>",
-          "Wt. Avg. Comp. Bldg. S.F.: ",
-          round(wt_avg_comp_char_bldg_sf, 2), "<br>",
-          "Target Land S.F.: ",
-          target_char_land_sf, "<br>",
-          "Wt. Avg. Comp. Land S.F.: ",
-          round(wt_avg_comp_char_land_sf, 2), "<br>",
-          "Target Beds: ",
-          target_char_beds, "<br>",
-          "Wt. Avg. Comp. Beds: ",
-          round(wt_avg_comp_char_beds, 2), "<br>",
-          "Target Full Baths: ",
-          target_char_fbath, "<br>",
-          "Wt. Avg. Comp. Full Baths: ",
-          round(wt_avg_comp_char_fbath, 2), "<br>",
-          "Target Half Baths: ",
-          target_char_hbath, "<br>",
-          "Wt. Avg. Comp. Half Baths: ",
-          round(wt_avg_comp_char_hbath, 2), "<br>",
-          "Avg. Comp. Score: ",
-          scales::percent(avg_comp_score, accuracy = 1)
-        )
-      )
-    ) +
-    geom_abline(slope = slope, intercept = 0) +
-    scale_x_continuous(
-      name = x_lab,
-      labels = labels
-    ) +
-    scale_y_continuous(name = y_lab) +
-    labs(color = grp_lab) +
-    theme_minimal()
+    df, x, y, grp, x_lab, y_lab, grp_lab,
+    slope = 1, labels = waiver()) {
 
-  gplt <- ggplotly(plt, tooltip = "text")
+  desc_vals <- df %>%
+    dplyr::distinct(description) %>%
+    dplyr::pull(description)
 
-  return(gplt)
+  purrr::map(
+    stats::setNames(desc_vals, desc_vals),
+    function(desc_val) {
+
+      df_desc <- df %>% dplyr::filter(description == desc_val)
+
+      plt <- df_desc %>%
+        ggplot() +
+        geom_point(
+          aes(
+            group = target_pin,
+            x = get(x),
+            y = get(y),
+            color = get(grp),
+            text = paste0(
+              "Township: ", target_township_name, "<br>",
+              "PIN: ", target_pin, "<br>",
+              "Class: ", target_class, "<br>",
+              "Estimate FMV: ",
+              scales::dollar(pred_pin_final_fmv, accuracy = 1), "<br>",
+              "Median Comp. Dist. (ft.): ", round(med_comp_dist_ft, 2), "<br>",
+              "Wt. Avg. Comp. Dist. (ft.): ", round(wt_avg_comp_dist_ft, 2), "<br>",
+              "Target Yrblt.: ", target_char_yrblt, "<br>",
+              "Wt. Avg. Comp. Yrblt.: ", round(wt_avg_comp_char_yrblt, 2), "<br>",
+              "Target Bldg. S.F.: ", target_char_bldg_sf, "<br>",
+              "Wt. Avg. Comp. Bldg. S.F.: ",
+              round(wt_avg_comp_char_bldg_sf, 2), "<br>",
+              "Target Land S.F.: ", target_char_land_sf, "<br>",
+              "Wt. Avg. Comp. Land S.F.: ",
+              round(wt_avg_comp_char_land_sf, 2), "<br>",
+              "Target Beds: ", target_char_beds, "<br>",
+              "Wt. Avg. Comp. Beds: ",
+              round(wt_avg_comp_char_beds, 2), "<br>",
+              "Target Full Baths: ", target_char_fbath, "<br>",
+              "Wt. Avg. Comp. Full Baths: ",
+              round(wt_avg_comp_char_fbath, 2), "<br>",
+              "Target Half Baths: ", target_char_hbath, "<br>",
+              "Wt. Avg. Comp. Half Baths: ",
+              round(wt_avg_comp_char_hbath, 2), "<br>",
+              "Avg. Comp. Score: ",
+              scales::percent(avg_comp_score, accuracy = 1)
+            )
+          )
+        ) +
+        geom_abline(slope = slope, intercept = 0) +
+        scale_x_continuous(name = x_lab, labels = labels) +
+        scale_y_continuous(name = y_lab) +
+        labs(
+          title = paste("Run:", desc_val),
+          color = grp_lab
+        ) +
+        theme_minimal()
+
+      ggplotly(plt, tooltip = "text")
+    }
+  )
 }
+
 ```
 
 ## Topline Aggregate Stats
@@ -820,26 +830,32 @@ comps_by_pin_sales_agg <- merged_no_flags[
   wt_avg_comp_char_hbath = weighted.mean(
     comp_char_hbath, comp_score,
     na.rm = TRUE
-  )
-), by = c("target_pin", "target_township_code", "target_class")][
+  ),
+  description = data.table::first(description)
+  ),
+  by = c("run_id", "target_pin", "target_township_code", "target_class")][
   , target_township_name := ccao::town_convert(target_township_code)
 ]
 
 # Take a sample of target properties with sales to plot using plotly. Sample
 # because using all properties makes the plots too large to render
-comps_by_pin_sales_agg_sample <- comps_by_pin_sales_agg[sample(.N, 10000)]
+comps_by_pin_sales_agg_sample <- comps_by_pin_sales_agg %>%
+  group_by(description) %>%
+  sample_n(1000, n()) %>%
+  ungroup()
+
 ```
 
 ## Target Characteristic vs Weighted Average Comp Characteristic
 
-*The plots below use a sample of 10,000 individual target properties with sales*
+*The plots below use a sample of 1000 individual target properties with sales*
 
-::: {.panel-tabset}
 
 ### Sale Price By Township
 
+
 ```{r plot_targ_sale_v_avg_comp_town, out.width = "100%"}
-plot_ind_obs(
+data <- plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "target_sale_price",
   "wt_avg_comp_sale_price",
@@ -850,358 +866,934 @@ plot_ind_obs(
 )
 ```
 
-### Sale Price By Class
+::: {.panel-tabset}
 
-```{r plot_targ_sale_v_avg_comp_class, out.width = "100%"}
-plot_ind_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_sale_price",
-  "wt_avg_comp_sale_price",
-  "target_class",
-  "Target Sale Price",
-  "Wtd. Avg. Comp Sale Price",
-  "Class"
-)
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
 ```
 
-### Prediction By Township
+#### `r names(data)[2]`
 
-```{r plot_pred_v_avg_comp_town, out.width = "100%"}
-plot_ind_obs(
-  comps_by_pin_sales_agg_sample,
-  "pred_pin_final_fmv",
-  "wt_avg_comp_sale_price",
-  "target_township_name",
-  "Model Estimated FMV",
-  "Wtd. Avg. Comp Sale Price",
-  "Township"
-)
+```{r}
+data[[2]]
 ```
+#### `r names(data)[3]`
 
-### Prediction By Class
-
-```{r plot_pred_v_avg_comp_class, out.width = "100%"}
-plot_ind_obs(
-  comps_by_pin_sales_agg_sample,
-  "pred_pin_final_fmv",
-  "wt_avg_comp_sale_price",
-  "target_class",
-  "Model Estimated FMV",
-  "Wtd. Avg. Comp Sale Price",
-  "Class"
-)
+```{r}
+data[[3]]
 ```
+#### `r names(data)[4]`
 
-### Median Distance By Township
-
-```{r plot_median_dist_sf_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "pred_pin_final_fmv",
-  "med_comp_dist_ft",
-  "target_township_name",
-  "Model Estimated FMV",
-  "Median Comp Distance (ft)",
-  "Township",
-  slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
-)
+```{r}
+data[[4]]
 ```
+#### `r names(data)[5]`
 
-### Median Distance By Class
-
-```{r plot_median_dist_sf_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "pred_pin_final_fmv",
-  "med_comp_dist_ft",
-  "target_class",
-  "Model Estimated FMV",
-  "Median Comp Distance (ft)",
-  "Class",
-  slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
-)
-```
-
-### Average Distance By Township
-
-```{r plot_avg_dist_sf_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "pred_pin_final_fmv",
-  "wt_avg_comp_dist_ft",
-  "target_township_name",
-  "Model Estimated FMV",
-  "Wt. Avg. Comp Distance (ft)",
-  "Township",
-  slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
-)
-```
-
-### Average Distance By Class
-
-```{r plot_avg_dist_sf_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "pred_pin_final_fmv",
-  "wt_avg_comp_dist_ft",
-  "target_class",
-  "Model Estimated FMV",
-  "Wt. Avg. Comp Distance (ft)",
-  "Class",
-  slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
-)
-```
-
-### Yrblt. By Township
-
-```{r plot_yrblt_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_yrblt",
-  "wt_avg_comp_char_yrblt",
-  "target_township_name",
-  "Target Yrblt.",
-  "Wtd. Avg. Comp Yrblt.",
-  "Township"
-)
-```
-
-### Yrblt. By Class
-
-```{r plot_yrblt_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_yrblt",
-  "wt_avg_comp_char_yrblt",
-  "target_class",
-  "Target Yrblt.",
-  "Wtd. Avg. Comp Yrblt.",
-  "Class"
-)
-```
-
-### Bldg. S.F. By Township
-
-```{r plot_bldg_sf_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_bldg_sf",
-  "wt_avg_comp_char_bldg_sf",
-  "target_township_name",
-  "Target Bldg. S.F.",
-  "Wtd. Avg. Comp Bldg. S.F.",
-  "Township"
-)
-```
-
-### Bldg. S.F. By Class
-
-```{r plot_bldg_sf_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_bldg_sf",
-  "wt_avg_comp_char_bldg_sf",
-  "target_class",
-  "Target Bldg. S.F.",
-  "Wtd. Avg. Comp Bldg. S.F.",
-  "Class"
-)
-```
-
-### Land S.F. By Township
-
-```{r plot_land_sf_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_land_sf",
-  "wt_avg_comp_char_land_sf",
-  "target_township_name",
-  "Target Land S.F.",
-  "Wtd. Avg. Comp Land S.F.",
-  "Township"
-)
-```
-
-### Land S.F. By Class
-
-```{r plot_land_sf_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_land_sf",
-  "wt_avg_comp_char_land_sf",
-  "target_class",
-  "Target Land S.F.",
-  "Wtd. Avg. Comp Land S.F.",
-  "Class"
-)
-```
-
-### Beds By Township
-
-```{r plot_beds_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_beds",
-  "wt_avg_comp_char_beds",
-  "target_township_name",
-  "Target Beds",
-  "Wtd. Avg. Comp Beds",
-  "Township"
-)
-```
-
-### Beds By Class
-
-```{r plot_beds_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_beds",
-  "wt_avg_comp_char_beds",
-  "target_class",
-  "Target Beds",
-  "Wtd. Avg. Comp Beds",
-  "Class"
-)
-```
-
-### Full Baths By Township
-
-```{r plot_fbath_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_fbath",
-  "wt_avg_comp_char_fbath",
-  "target_township_name",
-  "Target Full Baths",
-  "Wtd. Avg. Comp Full Baths",
-  "Township"
-)
-```
-
-### Full Baths By Class
-
-```{r plot_fbath_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_fbath",
-  "wt_avg_comp_char_fbath",
-  "target_class",
-  "Target Full Baths",
-  "Wtd. Avg. Comp Full Baths",
-  "Class"
-)
-```
-
-### Half Baths By Township
-
-```{r plot_hbath_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_hbath",
-  "wt_avg_comp_char_hbath",
-  "target_township_name",
-  "Target Half Baths",
-  "Wtd. Avg. Comp Half Baths",
-  "Township"
-)
-```
-
-### Half Baths By Class
-
-```{r plot_hbath_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_hbath",
-  "wt_avg_comp_char_hbath",
-  "target_class",
-  "Target Half Baths",
-  "Wtd. Avg. Comp Half Baths",
-  "Class"
-)
+```{r}
+data[[5]]
 ```
 
 :::
 
-```{r}
-nav_tabs <- list()
-# This list will store the tab contents
-tab_contents <- list()
 
-# Order cards so that they appear in ascending order in the report
-card_nums <- assessment_df %>%
-  arrange(as.integer(meta_card_num)) %>%
-  pull(meta_card_num)
+### Sale Price By Class
 
-for (card_num in card_nums) {
-  # Filter the df for just the row representing the card at hand
-  assessment_card_df <- assessment_df %>% filter(meta_card_num == card_num)
-  # Filter for only this card's comps
-  comp_card_df <- comp_df %>% filter(card == card_num)
-
-  nav_tabs <- c(
-    nav_tabs,
-    withTags(
-      list(
-        li(
-          class = "nav-item",
-          role = "presentation",
-          a(
-            # Activate the first card's tab pane by default
-            class = ifelse(card_num == 1, "nav-link active", "nav-link"),
-            id = glue::glue("tabset-1-{card_num}-tab"),
-            "data-bs-toggle" = "tab",
-            "data-bs-target" = glue::glue("#tabset-1-{card_num}"),
-            role = "tab",
-            "aria-controls" = glue::glue("tabset-1-{card_num}"),
-            "aria-selected" = ifelse(card_num == 1, "true", "false"),
-            href = "",
-            paste0("Card ", card_num)
-          )
-        )
-      )
-    )
-  )
-
-  tab_contents <- c(
-    tab_contents,
-    withTags(
-      list(
-        div(
-          id = glue::glue("tabset-1-{card_num}"),
-          class = ifelse(card_num == 1, "tab-pane active", "tab-pane"),
-          role = "tabpanel",
-          "aria-labelledby" = glue::glue("tabset-1-{card_num}-tab"),
-          html_tags_for_report(
-            assessment_card_df,
-            comp_card_df,
-            parcel_is_multicard = TRUE,
-            bldg_sf_is_combined = FALSE
-          )
-        )
-      )
-    )
-  )
-}
-
-html_tags <- withTags(
-  list(
-    div(
-      class = "panel-tabset",
-      ul(
-        class = "nav nav-tabs",
-        role = "tablist",
-        nav_tabs
-      ),
-      div(
-        class = "tab-content",
-        tab_contents
-      )
-    )
-  )
+```{r plot_targ_sale_v_avg_comp_class, out.width = "100%"}
+data <- plot_ind_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_sale_price",
+  "wt_avg_comp_sale_price",
+  "target_class",
+  "Target Sale Price",
+  "Wtd. Avg. Comp Sale Price",
+  "Class"
 )
 ```
 
+
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Prediction By Township
+
+```{r plot_pred_v_avg_comp_town, out.width = "100%"}
+data <- plot_ind_obs(
+  comps_by_pin_sales_agg_sample,
+  "pred_pin_final_fmv",
+  "wt_avg_comp_sale_price",
+  "target_township_name",
+  "Model Estimated FMV",
+  "Wtd. Avg. Comp Sale Price",
+  "Township"
+)
+```
+
+
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+
+### Prediction By Class
+
+```{r plot_pred_v_avg_comp_class, out.width = "100%"}
+data <- plot_ind_obs(
+  comps_by_pin_sales_agg_sample,
+  "pred_pin_final_fmv",
+  "wt_avg_comp_sale_price",
+  "target_class",
+  "Model Estimated FMV",
+  "Wtd. Avg. Comp Sale Price",
+  "Class"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+
+### Median Distance By Township
+
+```{r plot_median_dist_sf_town, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "pred_pin_final_fmv",
+  "med_comp_dist_ft",
+  "target_township_name",
+  "Model Estimated FMV",
+  "Median Comp Distance (ft)",
+  "Township",
+  slope = 0,
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
+)
+```
+
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+
+### Median Distance By Class
+
+```{r plot_median_dist_sf_class, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "pred_pin_final_fmv",
+  "med_comp_dist_ft",
+  "target_class",
+  "Model Estimated FMV",
+  "Median Comp Distance (ft)",
+  "Class",
+  slope = 0,
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
+)
+```
+
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Average Distance By Township
+
+```{r plot_avg_dist_sf_town, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "pred_pin_final_fmv",
+  "wt_avg_comp_dist_ft",
+  "target_township_name",
+  "Model Estimated FMV",
+  "Wt. Avg. Comp Distance (ft)",
+  "Township",
+  slope = 0,
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Average Distance By Class
+
+```{r plot_avg_dist_sf_class, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "pred_pin_final_fmv",
+  "wt_avg_comp_dist_ft",
+  "target_class",
+  "Model Estimated FMV",
+  "Wt. Avg. Comp Distance (ft)",
+  "Class",
+  slope = 0,
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
+)
+```
+
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Yrblt. By Township
+
+```{r plot_yrblt_v_avg_comp_town, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_yrblt",
+  "wt_avg_comp_char_yrblt",
+  "target_township_name",
+  "Target Yrblt.",
+  "Wtd. Avg. Comp Yrblt.",
+  "Township"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Yrblt. By Class
+
+```{r plot_yrblt_v_avg_comp_class, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_yrblt",
+  "wt_avg_comp_char_yrblt",
+  "target_class",
+  "Target Yrblt.",
+  "Wtd. Avg. Comp Yrblt.",
+  "Class"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Bldg. S.F. By Township
+
+```{r plot_bldg_sf_v_avg_comp_town, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_bldg_sf",
+  "wt_avg_comp_char_bldg_sf",
+  "target_township_name",
+  "Target Bldg. S.F.",
+  "Wtd. Avg. Comp Bldg. S.F.",
+  "Township"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Bldg. S.F. By Class
+
+```{r plot_bldg_sf_v_avg_comp_class, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_bldg_sf",
+  "wt_avg_comp_char_bldg_sf",
+  "target_class",
+  "Target Bldg. S.F.",
+  "Wtd. Avg. Comp Bldg. S.F.",
+  "Class"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Land S.F. By Township
+
+```{r plot_land_sf_v_avg_comp_town, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_land_sf",
+  "wt_avg_comp_char_land_sf",
+  "target_township_name",
+  "Target Land S.F.",
+  "Wtd. Avg. Comp Land S.F.",
+  "Township"
+)
+```
+
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Land S.F. By Class
+
+```{r plot_land_sf_v_avg_comp_class, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_land_sf",
+  "wt_avg_comp_char_land_sf",
+  "target_class",
+  "Target Land S.F.",
+  "Wtd. Avg. Comp Land S.F.",
+  "Class"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Beds By Township
+
+```{r plot_beds_v_avg_comp_town, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_beds",
+  "wt_avg_comp_char_beds",
+  "target_township_name",
+  "Target Beds",
+  "Wtd. Avg. Comp Beds",
+  "Township"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Beds By Class
+
+```{r plot_beds_v_avg_comp_class, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_beds",
+  "wt_avg_comp_char_beds",
+  "target_class",
+  "Target Beds",
+  "Wtd. Avg. Comp Beds",
+  "Class"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Full Baths By Township
+
+```{r plot_fbath_v_avg_comp_town, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_fbath",
+  "wt_avg_comp_char_fbath",
+  "target_township_name",
+  "Target Full Baths",
+  "Wtd. Avg. Comp Full Baths",
+  "Township"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Full Baths By Class
+
+```{r plot_fbath_v_avg_comp_class, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_fbath",
+  "wt_avg_comp_char_fbath",
+  "target_class",
+  "Target Full Baths",
+  "Wtd. Avg. Comp Full Baths",
+  "Class"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Half Baths By Township
+
+```{r plot_hbath_v_avg_comp_town, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_hbath",
+  "wt_avg_comp_char_hbath",
+  "target_township_name",
+  "Target Half Baths",
+  "Wtd. Avg. Comp Half Baths",
+  "Township"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Half Baths By Class
+
+```{r plot_hbath_v_avg_comp_class, out.width = "100%"}
+data <- plot_ind_char_obs(
+  comps_by_pin_sales_agg_sample,
+  "target_char_hbath",
+  "wt_avg_comp_char_hbath",
+  "target_class",
+  "Target Half Baths",
+  "Wtd. Avg. Comp Half Baths",
+  "Class"
+)
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
+
+### Indiv. Char. Obs. By Run
+
+```{r}
+data <- plot_ind_obs(
+  df      = comps_by_pin_sales_agg_sample,
+  x       = "pred_pin_final_fmv",
+  y       = "target_sale_price",
+  grp     = "target_township_name",
+  x_lab   = "Estimated FMV",
+  y_lab   = "Sale Price",
+  grp_lab = "Township"
+)
+
+```
+::: {.panel-tabset}
+
+#### `r names(data)[1]`
+
+```{r}
+data[[1]]
+```
+
+#### `r names(data)[2]`
+
+```{r}
+data[[2]]
+```
+#### `r names(data)[3]`
+
+```{r}
+data[[3]]
+```
+#### `r names(data)[4]`
+
+```{r}
+data[[4]]
+```
+#### `r names(data)[5]`
+
+```{r}
+data[[5]]
+```
+
+:::
