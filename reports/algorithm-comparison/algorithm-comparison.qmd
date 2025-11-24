@@ -898,7 +898,57 @@ merged_no_flags %>%
 ```{r plot_data_prep}
 # Aggregate long comps to the PIN level, keeping only properties with sales
 # of the target PIN
-wt_avg_comp_sale_price
+comps_by_pin_sales_agg <- merged_no_flags[
+  comp_num <= keep_top_n_comps & !is.na(target_sale_price),
+][, .(
+  pred_pin_final_fmv = data.table::first(pred_pin_final_fmv),
+  target_sale_price = data.table::first(target_sale_price),
+  avg_comp_score = mean(comp_score, na.rm = TRUE),
+  wt_avg_comp_sale_price = weighted.mean(
+    comp_sale_price, comp_score,
+    na.rm = TRUE
+  ),
+  med_comp_dist_ft = targ_to_comp_dist_ft %>%
+    as.vector() %>%
+    median(na.rm = TRUE),
+  wt_avg_comp_dist_ft = targ_to_comp_dist_ft %>%
+    as.vector() %>%
+    weighted.mean(comp_score, na.rm = TRUE),
+  target_char_yrblt = data.table::first(target_char_yrblt),
+  wt_avg_comp_char_yrblt = weighted.mean(
+    comp_char_yrblt, comp_score,
+    na.rm = TRUE
+  ),
+  target_char_bldg_sf = data.table::first(target_char_bldg_sf),
+  wt_avg_comp_char_bldg_sf = weighted.mean(
+    comp_char_bldg_sf, comp_score,
+    na.rm = TRUE
+  ),
+  target_char_land_sf = data.table::first(target_char_land_sf),
+  wt_avg_comp_char_land_sf = weighted.mean(
+    comp_char_land_sf, comp_score,
+    na.rm = TRUE
+  ),
+  target_char_beds = data.table::first(target_char_beds),
+  wt_avg_comp_char_beds = weighted.mean(
+    comp_char_beds, comp_score,
+    na.rm = TRUE
+  ),
+  target_char_fbath = data.table::first(target_char_fbath),
+  wt_avg_comp_char_fbath = weighted.mean(
+    comp_char_fbath, comp_score,
+    na.rm = TRUE
+  ),
+  target_char_hbath = data.table::first(target_char_hbath),
+  wt_avg_comp_char_hbath = weighted.mean(
+    comp_char_hbath, comp_score,
+    na.rm = TRUE
+  ),
+  description = data.table::first(description)
+  ),
+  by = c("run_id", "target_pin", "target_township_code", "target_class")][
+  , target_township_name := ccao::town_convert(target_township_code)
+]
 
 # Take a sample of target properties with sales to plot using plotly. Sample
 # because using all properties makes the plots too large to render
