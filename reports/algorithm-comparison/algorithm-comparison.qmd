@@ -145,8 +145,6 @@ agg_log_char_sql <- function(agg_fun, charname, floor) {
 agg_char_stats <- dbGetQuery(
   conn,
   # Make sure to log all sqft features, since they aren't normally distributed.
-  # Beds and baths are also not normally distributed but they're difficult to
-  # normalize since 0 is an important value to preserve
   glue("
   select
     year,
@@ -158,10 +156,7 @@ agg_char_stats <- dbGetQuery(
     avg(cast(char_hbath as double)) as agg_avg_hbath,
     stddev(cast(char_yrblt as double)) as agg_stddev_yrblt,
     {agg_log_char_sql('stddev', 'char_bldg_sf', floor = 1)},
-    {agg_log_char_sql('stddev', 'char_land_sf', floor = 1)},
-    stddev(cast(char_beds as double)) as agg_stddev_beds,
-    stddev(cast(char_fbath as double)) as agg_stddev_fbath,
-    stddev(cast(char_hbath as double)) as agg_stddev_hbath
+    {agg_log_char_sql('stddev', 'char_land_sf', floor = 1)}
   from default.vw_card_res_char
   group by year order by year
   ")
@@ -187,9 +182,6 @@ training_data <- training_data %>%
       (log(char_bldg_sf_safe) - agg_avg_log_bldg_sf) / agg_stddev_log_bldg_sf,
     z_land_sf =
       (log(char_land_sf_safe) - agg_avg_log_land_sf) / agg_stddev_log_land_sf,
-    z_beds = (char_beds - agg_avg_beds) / agg_stddev_beds,
-    z_hbath = (char_hbath - agg_avg_hbath) / agg_stddev_hbath,
-    z_fbath = (char_fbath - agg_avg_fbath) / agg_stddev_fbath
   ) %>%
   select(-ends_with("_safe"))
 
@@ -207,9 +199,6 @@ preds_card <- preds_card %>%
       (log(char_bldg_sf_safe) - agg_avg_log_bldg_sf) / agg_stddev_log_bldg_sf,
     target_z_land_sf =
       (log(char_land_sf_safe) - agg_avg_log_land_sf) / agg_stddev_log_land_sf,
-    target_z_beds = (char_beds - agg_avg_beds) / agg_stddev_beds,
-    target_z_hbath = (char_hbath - agg_avg_hbath) / agg_stddev_hbath,
-    target_z_fbath = (char_fbath - agg_avg_fbath) / agg_stddev_fbath
   ) %>%
   select(-ends_with("_safe")) %>%
   rename_with(
@@ -279,9 +268,6 @@ training_data_clean <- training_data %>%
     char_yrblt, z_yrblt, agg_avg_yrblt, agg_stddev_yrblt,
     char_bldg_sf, z_bldg_sf, agg_avg_log_bldg_sf, agg_stddev_log_bldg_sf,
     char_land_sf, z_land_sf, agg_avg_log_land_sf, agg_stddev_log_land_sf,
-    char_beds, z_beds, agg_avg_beds, agg_stddev_beds,
-    char_fbath, z_fbath, agg_avg_fbath, agg_stddev_fbath,
-    char_hbath, z_hbath, agg_avg_hbath, agg_stddev_hbath,
     loc_latitude, loc_longitude
   )
 
@@ -324,9 +310,6 @@ merged_model_comps <- comps_long %>%
         target_char_yrblt = char_yrblt,
         target_char_bldg_sf = char_bldg_sf,
         target_char_land_sf = char_land_sf,
-        target_char_beds = char_beds,
-        target_char_fbath = char_fbath,
-        target_char_hbath = char_hbath,
         starts_with("target_")
       ),
     by = c("target_pin" = "meta_pin",
@@ -390,9 +373,6 @@ merged_w_dist <- merged_model_comps %>%
     targ_to_comp_dist_yrblt = abs(target_z_yrblt - comp_z_yrblt),
     targ_to_comp_dist_bldg_sf = abs(target_z_bldg_sf - comp_z_bldg_sf),
     targ_to_comp_dist_land_sf = abs(target_z_land_sf - comp_z_land_sf),
-    targ_to_comp_dist_beds = abs(target_z_beds - comp_z_beds),
-    targ_to_comp_dist_hbath = abs(target_z_hbath - comp_z_hbath),
-    targ_to_comp_dist_fbath = abs(target_z_fbath - comp_z_fbath)
   ) %>%
   select(-target_geometry, -comp_geometry) %>%
   st_drop_geometry()
@@ -465,12 +445,6 @@ format_agg_stats <- function(df) {
         "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)" = "avg_comp_dist_bldg_sf_sd",
         "Med. Comp. Log Land S.F. Dist. (S.D.)" = "med_comp_dist_land_sf_sd",
         "Avg. Comp. Log Land S.F. Dist. (S.D.)" = "avg_comp_dist_land_sf_sd",
-        "Med. Comp. Beds Dist. (S.D.)" = "med_comp_dist_beds_sd",
-        "Avg. Comp. Beds Dist. (S.D.)" = "avg_comp_dist_beds_sd",
-        "Med. Comp. Full Bath Dist. (S.D.)" = "med_comp_dist_fbath_sd",
-        "Avg. Comp. Full Bath Dist. (S.D.)" = "avg_comp_dist_fbath_sd",
-        "Med. Comp. Half Bath Dist. (S.D.)" = "med_comp_dist_hbath_sd",
-        "Avg. Comp. Half Bath Dist. (S.D.)" = "avg_comp_dist_hbath_sd"
       ),
       options = list(
         autoWidth = TRUE,
@@ -1046,8 +1020,6 @@ plot_ind_char_obs(
   "Model Estimated FMV",
   "Median Comp Distance (ft)",
   "Class",
-  slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
   id_prefix = "median_dist_class"
 )
 ```
@@ -1176,101 +1148,6 @@ plot_ind_char_obs(
   "Avg. Comp Land S.F.",
   "Class",
   id_prefix = "land_sf_class"
-)
-```
-
-
-### Beds By Township
-
-```{r plot_beds_v_avg_comp_town, results="asis"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_beds",
-  "avg_comp_char_beds",
-  "target_township_name",
-  "Target Beds",
-  "Avg. Comp Beds",
-  "Township",
-  id_prefix = "beds_township"
-)
-```
-
-
-### Beds By Class
-
-```{r plot_beds_v_avg_comp_class, results="asis"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_beds",
-  "avg_comp_char_beds",
-  "target_class",
-  "Target Beds",
-  "Avg. Comp Beds",
-  "Class",
-  id_prefix = "beds_class"
-)
-```
-
-
-### Full Baths By Township
-
-```{r plot_fbath_v_avg_comp_town, results="asis"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_fbath",
-  "avg_comp_char_fbath",
-  "target_township_name",
-  "Target Full Baths",
-  "Avg. Comp Full Baths",
-  "Township",
-  id_prefix = "fbath_township"
-)
-```
-
-### Full Baths By Class
-
-```{r plot_fbath_v_avg_comp_class, results="asis"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_fbath",
-  "avg_comp_char_fbath",
-  "target_class",
-  "Target Full Baths",
-  "Avg. Comp Full Baths",
-  "Class",
-  id_prefix = "fbath_class"
-)
-```
-
-
-### Half Baths By Township
-
-```{r plot_hbath_v_avg_comp_town, results="asis"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_hbath",
-  "avg_comp_char_hbath",
-  "target_township_name",
-  "Target Half Baths",
-  "Avg. Comp Half Baths",
-  "Township",
-  id_prefix = "hbath_township"
-)
-```
-
-
-### Half Baths By Class
-
-```{r plot_hbath_v_avg_comp_class, results="asis"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_hbath",
-  "avg_comp_char_hbath",
-  "target_class",
-  "Target Half Baths",
-  "Avg. Comp Half Baths",
-  "Class",
-  id_prefix = "hbath_class"
 )
 ```
 
