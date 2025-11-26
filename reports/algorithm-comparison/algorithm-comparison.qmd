@@ -7,6 +7,7 @@ execute:
   message: false
 params:
   year: 2025
+  # descriptions and run_ids must be ordered correspondingly
   run_id:
     - "2025-10-18-blissful-sean"
     - "2025-06-14-flamboyant-rob"
@@ -19,10 +20,23 @@ params:
     - "Error reduction"
     - "Error reduction (semi-random)"
     - "Prediction variance"
+  keep_top_n_comps: 5
+  n_years_sales: 3
+
+    # year: 2024
+    # run_id:
+    # - "2025-09-07-adoring-jean"
+    # - "2025-08-28-mystifying-kyra"
+    # - "2024-06-18-calm-nathan"
+    # description:
+    # - "Unweighted (error-reducing trees only)"
+    # - "Error reduction"
+    # - "Error reduction (semi-random)"
 ---
 
 ```{r libraries}
 library(arrow)
+library(ccao)
 library(data.table)
 library(dtplyr)
 library(DT)
@@ -40,15 +54,18 @@ library(tidyverse)
 
 ```{r load_data}
 year <- params$year
-n_years_sales <- 3
-keep_top_n_comps <- 5 # How many comps to keep
-total_n_comps <- 5 # The total number of comps to analyze
-triad <- "1" # Which tri to filter comps for; should match the run ID
+n_years_sales <- params$n_years_sales
+keep_top_n_comps <- params$keep_top_n_comps
+
+triad <- dplyr::case_when(
+  year %% 3 == 0 ~ "2",
+  year %% 3 == 1 ~ "3",
+  year %% 3 == 2 ~ "1"
+)
 
 s3_bucket <- "s3://ccao-model-results-us-east-1"
 run_ids <- params$run_id
 
-year <- params$year
 s3_bucket <- "s3://ccao-model-results-us-east-1"
 
 run_tbl <- tibble::tibble(
@@ -94,7 +111,7 @@ data <- pmap(
     training_data_filename <- substr(dvc_md5_hash, 3, nchar(dvc_md5_hash))
 
     training_data <- read_parquet(glue(
-      "s3://ccao-data-dvc-us-east-1/files/md5/{training_data_prefix}/{training_data_filename}"
+      "s3://ccao-data-dvc-us-east-1/files/md5/{training_data_prefix}/{training_data_filename}" # nolintr
     )) %>%
       mutate(
         year = !!year, run_id = !!run_id, description = !!description,
@@ -112,10 +129,13 @@ data <- pmap(
 
 comps <- map(data, "comps") %>%
   bind_rows()
+
 preds_pin <- map(data, "preds_pin") %>%
   bind_rows()
+
 preds_card <- map(data, "preds_card") %>%
   bind_rows()
+
 training_data <- map(data, "training_data") %>%
   bind_rows()
 
@@ -151,9 +171,6 @@ agg_char_stats <- dbGetQuery(
     avg(cast(char_yrblt as double)) as agg_avg_yrblt,
     {agg_log_char_sql('avg', 'char_bldg_sf', floor = 1)},
     {agg_log_char_sql('avg', 'char_land_sf', floor = 1)},
-    avg(cast(char_beds as double)) as agg_avg_beds,
-    avg(cast(char_fbath as double)) as agg_avg_fbath,
-    avg(cast(char_hbath as double)) as agg_avg_hbath,
     stddev(cast(char_yrblt as double)) as agg_stddev_yrblt,
     {agg_log_char_sql('stddev', 'char_bldg_sf', floor = 1)},
     {agg_log_char_sql('stddev', 'char_land_sf', floor = 1)}
@@ -163,7 +180,8 @@ agg_char_stats <- dbGetQuery(
 )
 ```
 
-```{r top_char_z_scores}
+
+```{r top_char_scores}
 # Calculate zscores for top chars in training and assessment sets, so that we
 # can compute char distance metrics
 training_data <- training_data %>%
@@ -281,7 +299,9 @@ training_data_clean_geo <- training_data_clean %>%
 training_data_clean_no_geo <- training_data_clean %>%
   filter(is.na(loc_latitude)) %>%
   # create an empty geometry column with same CRS
-  mutate(geometry = st_sfc(rep(st_geometrycollection(), n()), crs = st_crs(training_data_clean_geo))) %>%
+  mutate(geometry = st_sfc(rep(st_geometrycollection(), n()),
+    crs = st_crs(training_data_clean_geo)
+  )) %>%
   st_as_sf()
 
 training_data_clean <- bind_rows(
@@ -312,9 +332,11 @@ merged_model_comps <- comps_long %>%
         target_char_land_sf = char_land_sf,
         starts_with("target_")
       ),
-    by = c("target_pin" = "meta_pin",
-           "target_card" = "meta_card_num",
-           "run_id" = "run_id")
+    by = c(
+      "target_pin" = "meta_pin",
+      "target_card" = "meta_card_num",
+      "run_id" = "run_id"
+    )
   ) %>%
   # Merge target sale price. To do this, we join to any recent sales for the
   # target. Note that this means a many-to-many join, and can create dupes
@@ -322,7 +344,7 @@ merged_model_comps <- comps_long %>%
   left_join(
     training_data_clean %>%
       filter(year(meta_sale_date) >=
-        year(max(meta_sale_date)) + 1 - n_years_sales) %>%
+        year(max(meta_sale_date)) + 1 - n_years_sales) %>% # nolintr
       select(
         meta_pin, meta_card_num, run_id,
         target_sale_document_num = meta_sale_document_num,
@@ -330,9 +352,11 @@ merged_model_comps <- comps_long %>%
         target_sale_date = meta_sale_date,
       ) %>%
       st_drop_geometry(),
-    by = c("target_pin" = "meta_pin",
-           "target_card" = "meta_card_num",
-           "run_id" = "run_id"),
+    by = c(
+      "target_pin" = "meta_pin",
+      "target_card" = "meta_card_num",
+      "run_id" = "run_id"
+    ),
     relationship = "many-to-many"
   ) %>%
   # Merge comp chars
@@ -358,10 +382,9 @@ merged_model_comps <- comps_long %>%
       "comp_document_num" = "meta_sale_document_num",
       "run_id" = "run_id"
     )
-  )
-# Filter for only cards in the selected tri
-# filter(ccao::town_get_triad(target_township_code) == triad)
-
+  ) %>%
+  # Filter for only cards in the selected tri
+  filter(town_get_triad(target_township_code) == triad)
 
 # Calculate the distance between the target and each comparable property/sale
 merged_w_dist <- merged_model_comps %>%
@@ -417,9 +440,7 @@ gc()
 ```
 
 ```{r helper_funcs}
-
 format_agg_stats <- function(df) {
-
   df %>%
     datatable(
       rownames = FALSE,
@@ -431,9 +452,9 @@ format_agg_stats <- function(df) {
         "Num. Sales" = "n_sales",
         "Med. PIN Pred. Price" = "med_pin_pred_price",
         "Med. Target Sale Price" = "med_target_sale_price",
-        "Wt. Med. Comp. Sale Price" = "wt_med_comp_sale_price",
+        "Med. Comp. Sale Price" = "med_comp_sale_price",
         "Med. Target Sale Date" = "med_target_sale_date",
-        "Wt. Med. Comp. Sale Date" = "wt_med_comp_sale_date",
+        "Med. Comp. Sale Date" = "med_comp_sale_date",
         "Med. Comp. Dist. (ft)" = "med_comp_dist_ft",
         "Avg. Comp. Dist. (ft)" = "avg_comp_dist_ft",
         "Med. Comp. Score" = "med_comp_score",
@@ -444,7 +465,7 @@ format_agg_stats <- function(df) {
         "Med. Comp. Log Bldg. S.F. Dist. (S.D.)" = "med_comp_dist_bldg_sf_sd",
         "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)" = "avg_comp_dist_bldg_sf_sd",
         "Med. Comp. Log Land S.F. Dist. (S.D.)" = "med_comp_dist_land_sf_sd",
-        "Avg. Comp. Log Land S.F. Dist. (S.D.)" = "avg_comp_dist_land_sf_sd",
+        "Avg. Comp. Log Land S.F. Dist. (S.D.)" = "avg_comp_dist_land_sf_sd"
       ),
       options = list(
         autoWidth = TRUE,
@@ -473,19 +494,14 @@ format_agg_stats <- function(df) {
         "Med. Comp. Log Bldg. S.F. Dist. (S.D.)",
         "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)",
         "Med. Comp. Log Land S.F. Dist. (S.D.)",
-        "Avg. Comp. Log Land S.F. Dist. (S.D.)",
-        "Med. Comp. Beds Dist. (S.D.)", "Avg. Comp. Beds Dist. (S.D.)",
-        "Med. Comp. Full Bath Dist. (S.D.)",
-        "Avg. Comp. Full Bath Dist. (S.D.)",
-        "Med. Comp. Half Bath Dist. (S.D.)",
-        "Avg. Comp. Half Bath Dist. (S.D.)"
+        "Avg. Comp. Log Land S.F. Dist. (S.D.)"
       ),
       digits = 3
     ) %>%
     formatCurrency(
       c(
         "Med. PIN Pred. Price", "Med. Target Sale Price",
-        "Wt. Med. Comp. Sale Price"
+        "Med. Comp. Sale Price"
       ),
       currency = "$",
       digits = 0
@@ -501,8 +517,8 @@ gen_agg_stats <- function(df, group_cols, n) {
     .(
       pred_pin_final_fmv = data.table::first(pred_pin_final_fmv),
       target_sale_price = data.table::first(target_sale_price),
-      wt_avg_comp_sale_price = weighted.mean(
-        comp_sale_price, comp_score,
+      avg_comp_sale_price = mean(
+        comp_sale_price,
         na.rm = TRUE
       )
     ),
@@ -511,12 +527,12 @@ gen_agg_stats <- function(df, group_cols, n) {
     ,
     .(
       corr_comp_pin_pred = cor(
-        wt_avg_comp_sale_price,
+        avg_comp_sale_price,
         pred_pin_final_fmv,
         use = "pairwise.complete.obs"
       ),
       corr_comp_target_sale = cor(
-        wt_avg_comp_sale_price,
+        avg_comp_sale_price,
         target_sale_price,
         use = "pairwise.complete.obs"
       )
@@ -531,15 +547,9 @@ gen_agg_stats <- function(df, group_cols, n) {
       n_sales = sum(!is.na(target_sale_price)) / n,
       med_pin_pred_price = median(pred_pin_final_fmv, na.rm = TRUE),
       med_target_sale_price = median(target_sale_price, na.rm = TRUE),
-      wt_med_comp_sale_price = matrixStats::weightedMedian(
-        comp_sale_price, comp_score,
-        na.rm = TRUE
-      ),
+      med_comp_sale_price = median(comp_sale_price, na.rm = TRUE),
       med_target_sale_date = median(target_sale_date, na.rm = TRUE),
-      wt_med_comp_sale_date = as.Date(matrixStats::weightedMedian(
-        comp_sale_date, comp_score,
-        na.rm = TRUE
-      )),
+      med_comp_sale_date = median(comp_sale_date, na.rm = TRUE),
       med_comp_dist_ft = median(targ_to_comp_dist_ft, na.rm = TRUE),
       avg_comp_dist_ft = mean(targ_to_comp_dist_ft, na.rm = TRUE),
       med_comp_dist_yrblt_sd = median(targ_to_comp_dist_yrblt, na.rm = TRUE),
@@ -550,16 +560,11 @@ gen_agg_stats <- function(df, group_cols, n) {
       med_comp_dist_land_sf_sd =
         median(targ_to_comp_dist_land_sf, na.rm = TRUE),
       avg_comp_dist_land_sf_sd = mean(targ_to_comp_dist_land_sf, na.rm = TRUE),
-      med_comp_dist_beds_sd = median(targ_to_comp_dist_beds, na.rm = TRUE),
-      avg_comp_dist_beds_sd = mean(targ_to_comp_dist_beds, na.rm = TRUE),
-      med_comp_dist_fbath_sd = median(targ_to_comp_dist_fbath, na.rm = TRUE),
-      avg_comp_dist_fbath_sd = mean(targ_to_comp_dist_fbath, na.rm = TRUE),
-      med_comp_dist_hbath_sd = median(targ_to_comp_dist_hbath, na.rm = TRUE),
-      avg_comp_dist_hbath_sd = mean(targ_to_comp_dist_hbath, na.rm = TRUE),
       med_comp_score = median(comp_score, na.rm = TRUE)
     ),
     by = group_cols
   ]
+
 
   out <- merge(
     by_g,
@@ -576,8 +581,7 @@ plot_ind_obs <- function(
     x, y, grp,
     x_lab, y_lab, grp_lab,
     slope = 1,
-    id_prefix = "desc"
-) {
+    id_prefix = "desc") {
   df <- df %>%
     dplyr::mutate(description = as.character(description))
 
@@ -585,7 +589,7 @@ plot_ind_obs <- function(
     dplyr::distinct(description) %>%
     dplyr::pull(description)
 
-  nav_tabs     <- vector("list", length(desc_vals))
+  nav_tabs <- vector("list", length(desc_vals))
   tab_contents <- vector("list", length(desc_vals))
 
   for (idx in seq_along(desc_vals)) {
@@ -599,10 +603,10 @@ plot_ind_obs <- function(
       geom_point(
         aes(
           group = target_pin,
-          x     = get(x),
-          y     = get(y),
+          x = get(x),
+          y = get(y),
           color = get(grp),
-          text  = paste0(
+          text = paste0(
             "Township: ", target_township_name, "<br>",
             "PIN: ", target_pin, "<br>",
             "Class: ", target_class, "<br>",
@@ -619,24 +623,24 @@ plot_ind_obs <- function(
       ) +
       geom_abline(slope = slope, intercept = 0) +
       scale_x_continuous(
-        name   = x_lab,
+        name = x_lab,
         labels = scales::label_dollar(
           accuracy = 1,
           scale    = 1 / 1000,
           suffix   = "K"
         ),
         n.breaks = 8,
-        limits   = c(0, 1.5e6)
+        limits = c(0, 1.5e6)
       ) +
       scale_y_continuous(
-        name   = y_lab,
+        name = y_lab,
         labels = scales::label_dollar(
           accuracy = 1,
           scale    = 1 / 1000,
           suffix   = "K"
         ),
         n.breaks = 8,
-        limits   = c(0, 1.5e6)
+        limits = c(0, 1.5e6)
       ) +
       labs(
         title = paste("Run:", desc_val),
@@ -649,7 +653,7 @@ plot_ind_obs <- function(
     nav_tabs[[idx]] <- htmltools::withTags(
       li(
         class = "nav-item",
-        role  = "presentation",
+        role = "presentation",
         a(
           class            = if (idx == 1) "nav-link active" else "nav-link",
           id               = glue::glue("{tab_id}-tab"),
@@ -666,9 +670,9 @@ plot_ind_obs <- function(
 
     tab_contents[[idx]] <- htmltools::withTags(
       div(
-        id    = tab_id,
+        id = tab_id,
         class = if (idx == 1) "tab-pane active" else "tab-pane",
-        role  = "tabpanel",
+        role = "tabpanel",
         "aria-labelledby" = glue::glue("{tab_id}-tab"),
         ggplotly(plt, tooltip = "text")
       )
@@ -694,8 +698,7 @@ plot_ind_obs <- function(
 plot_ind_char_obs <- function(
     df, x, y, grp, x_lab, y_lab, grp_lab,
     slope = 1, labels = waiver(),
-    id_prefix = "desc"
-) {
+    id_prefix = "desc") {
   df <- df %>%
     dplyr::mutate(description = as.character(description))
 
@@ -703,7 +706,7 @@ plot_ind_char_obs <- function(
     dplyr::distinct(description) %>%
     dplyr::pull(description)
 
-  nav_tabs     <- vector("list", length(desc_vals))
+  nav_tabs <- vector("list", length(desc_vals))
   tab_contents <- vector("list", length(desc_vals))
 
   for (idx in seq_along(desc_vals)) {
@@ -717,10 +720,10 @@ plot_ind_char_obs <- function(
       geom_point(
         aes(
           group = target_pin,
-          x     = get(x),
-          y     = get(y),
+          x = get(x),
+          y = get(y),
           color = get(grp),
-          text  = paste0(
+          text = paste0(
             "Township: ", target_township_name, "<br>",
             "PIN: ", target_pin, "<br>",
             "Class: ", target_class, "<br>",
@@ -739,15 +742,6 @@ plot_ind_char_obs <- function(
             "Target Land S.F.: ", target_char_land_sf, "<br>",
             "Avg. Comp. Land S.F.: ",
             round(avg_comp_char_land_sf, 2), "<br>",
-            "Target Beds: ", target_char_beds, "<br>",
-            "Avg. Comp. Beds: ",
-            round(avg_comp_char_beds, 2), "<br>",
-            "Target Full Baths: ", target_char_fbath, "<br>",
-            "Avg. Comp. Full Baths: ",
-            round(avg_comp_char_fbath, 2), "<br>",
-            "Target Half Baths: ", target_char_hbath, "<br>",
-            "Avg. Comp. Half Baths: ",
-            round(avg_comp_char_hbath, 2), "<br>",
             "Avg. Comp. Score: ",
             scales::percent(avg_comp_score, accuracy = 1)
           )
@@ -767,7 +761,7 @@ plot_ind_char_obs <- function(
     nav_tabs[[idx]] <- htmltools::withTags(
       li(
         class = "nav-item",
-        role  = "presentation",
+        role = "presentation",
         a(
           class            = if (idx == 1) "nav-link active" else "nav-link",
           id               = glue::glue("{tab_id}-tab"),
@@ -784,9 +778,9 @@ plot_ind_char_obs <- function(
 
     tab_contents[[idx]] <- htmltools::withTags(
       div(
-        id    = tab_id,
+        id = tab_id,
         class = if (idx == 1) "tab-pane active" else "tab-pane",
-        role  = "tabpanel",
+        role = "tabpanel",
         "aria-labelledby" = glue::glue("{tab_id}-tab"),
         ggplotly(plt, tooltip = "text")
       )
@@ -808,8 +802,6 @@ plot_ind_char_obs <- function(
     )
   )
 }
-
-
 ```
 
 ## Topline Aggregate Stats
@@ -877,39 +869,23 @@ comps_by_pin_sales_agg <- merged_no_flags[
   comp_num <= keep_top_n_comps & !is.na(target_sale_price),
 ][
   , .(
-    pred_pin_final_fmv   = data.table::first(pred_pin_final_fmv),
-    target_sale_price    = data.table::first(target_sale_price),
-
-    avg_comp_score       = mean(comp_score, na.rm = TRUE),
-    avg_comp_sale_price  = mean(comp_sale_price, na.rm = TRUE),
-
-    med_comp_dist_ft     = targ_to_comp_dist_ft %>%
+    pred_pin_final_fmv = data.table::first(pred_pin_final_fmv),
+    target_sale_price = data.table::first(target_sale_price),
+    avg_comp_score = mean(comp_score, na.rm = TRUE),
+    avg_comp_sale_price = mean(comp_sale_price, na.rm = TRUE),
+    med_comp_dist_ft = targ_to_comp_dist_ft %>%
       as.vector() %>%
       median(na.rm = TRUE),
-
-    avg_comp_dist_ft     = targ_to_comp_dist_ft %>%
+    avg_comp_dist_ft = targ_to_comp_dist_ft %>%
       as.vector() %>%
       mean(na.rm = TRUE),
-
-    target_char_yrblt    = data.table::first(target_char_yrblt),
-    avg_comp_char_yrblt  = mean(comp_char_yrblt, na.rm = TRUE),
-
-    target_char_bldg_sf  = data.table::first(target_char_bldg_sf),
+    target_char_yrblt = data.table::first(target_char_yrblt),
+    avg_comp_char_yrblt = mean(comp_char_yrblt, na.rm = TRUE),
+    target_char_bldg_sf = data.table::first(target_char_bldg_sf),
     avg_comp_char_bldg_sf = mean(comp_char_bldg_sf, na.rm = TRUE),
-
-    target_char_land_sf  = data.table::first(target_char_land_sf),
+    target_char_land_sf = data.table::first(target_char_land_sf),
     avg_comp_char_land_sf = mean(comp_char_land_sf, na.rm = TRUE),
-
-    target_char_beds     = data.table::first(target_char_beds),
-    avg_comp_char_beds   = mean(comp_char_beds, na.rm = TRUE),
-
-    target_char_fbath    = data.table::first(target_char_fbath),
-    avg_comp_char_fbath  = mean(comp_char_fbath, na.rm = TRUE),
-
-    target_char_hbath    = data.table::first(target_char_hbath),
-    avg_comp_char_hbath  = mean(comp_char_hbath, na.rm = TRUE),
-
-    description          = data.table::first(description)
+    description = data.table::first(description)
   ),
   by = c("run_id", "target_pin", "target_township_code", "target_class")
 ][
@@ -919,21 +895,23 @@ comps_by_pin_sales_agg <- merged_no_flags[
 
 # Take a sample of target properties with sales to plot using plotly. Sample
 # because using all properties makes the plots too large to render
-comps_by_pin_sales_agg_sample <- comps_by_pin_sales_agg %>%
-  group_by(description) %>%
-  sample_n(1000, n()) %>%
-  ungroup()
+# Select the same sample for all runs
+sample_pins <- comps_by_pin_sales_agg %>%
+  distinct(target_pin) %>%
+  sample_n(2000)
 
+comps_by_pin_sales_agg_sample <- comps_by_pin_sales_agg %>%
+  semi_join(sample_pins, by = "target_pin")
 ```
 
 ## Target Characteristic vs Weighted Average Comp Characteristic
 
-*The plots below use a sample of 1000 individual target properties with sales*
+*The plots below use a sample of 2000 individual target properties with sales (per run)*
 
 
 ### Sale Price By Township
 
-```{r plot_targ_sale_v_avg_comp_town, out.width = "100%"}
+```{r plot_targ_sale_v_avg_comp_town, results="asis", out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "target_sale_price",
@@ -948,7 +926,7 @@ plot_ind_obs(
 
 ### Sale Price By Class
 
-```{r plot_targ_sale_v_avg_comp_class, out.width = "100%"}
+```{r plot_targ_sale_v_avg_comp_class, results="asis", out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "target_sale_price",
@@ -963,7 +941,7 @@ plot_ind_obs(
 
 ### Prediction By Township
 
-```{r plot_pred_v_avg_comp_town, out.width = "100%"}
+```{r plot_pred_v_avg_comp_town, results="asis", out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
@@ -978,7 +956,7 @@ plot_ind_obs(
 
 ### Prediction By Class
 
-```{r plot_pred_v_avg_comp_class, out.width = "100%"}
+```{r plot_pred_v_avg_comp_class, results="asis", out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
@@ -994,7 +972,7 @@ plot_ind_obs(
 
 ### Median Distance By Township
 
-```{r plot_median_dist_sf_town, out.width = "100%"}
+```{r plot_median_dist_sf_town, results="asis", out.width = "100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
@@ -1011,7 +989,7 @@ plot_ind_char_obs(
 
 ### Median Distance By Class
 
-```{r plot_median_dist_sf_class, out.width = "100%"}
+```{r plot_median_dist_sf_class, results="asis", out.width = "100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
@@ -1020,6 +998,8 @@ plot_ind_char_obs(
   "Model Estimated FMV",
   "Median Comp Distance (ft)",
   "Class",
+  slope = 0,
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
   id_prefix = "median_dist_class"
 )
 ```
@@ -1027,14 +1007,14 @@ plot_ind_char_obs(
 
 ### Average Distance By Township
 
-```{r plot_avg_dist_sf_town, results="asis"}
+```{r plot_avg_dist_sf_town, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
   "avg_comp_dist_ft",
   "target_township_name",
   "Model Estimated FMV",
-  "Wt. Avg. Comp Distance (ft)",
+  "Avg. Comp Distance (ft)",
   "Township",
   slope = 0,
   labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
@@ -1044,23 +1024,25 @@ plot_ind_char_obs(
 
 ### Average Distance By Class
 
-```{r plot_avg_dist_sf_class, results="asis"}
+```{r plot_avg_dist_sf_class, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
   "avg_comp_dist_ft",
   "target_class",
   "Model Estimated FMV",
-  "Wt. Avg. Comp Distance (ft)",
+  "Avg. Comp Distance (ft)",
   "Class",
-  id_prefix = "avg_dist_class",
+  slope = 0,
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
+  id_prefix = "avg_dist_class"
 )
 ```
 
 
 ### Yrblt. By Township
 
-```{r plot_yrblt_v_avg_comp_town, results="asis"}
+```{r plot_yrblt_v_avg_comp_town, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_yrblt",
@@ -1076,7 +1058,7 @@ plot_ind_char_obs(
 
 ### Yrblt. By Class
 
-```{r plot_yrblt_v_avg_comp_class, results="asis"}
+```{r plot_yrblt_v_avg_comp_class, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_yrblt",
@@ -1091,7 +1073,7 @@ plot_ind_char_obs(
 
 ### Bldg. S.F. By Township
 
-```{r plot_bldg_sf_v_avg_comp_town, results="asis"}
+```{r plot_bldg_sf_v_avg_comp_town, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_bldg_sf",
@@ -1106,7 +1088,7 @@ plot_ind_char_obs(
 
 ### Bldg. S.F. By Class
 
-```{r plot_bldg_sf_v_avg_comp_class, results="asis"}
+```{r plot_bldg_sf_v_avg_comp_class, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_bldg_sf",
@@ -1122,7 +1104,7 @@ plot_ind_char_obs(
 
 ### Land S.F. By Township
 
-```{r plot_land_sf_v_avg_comp_town, results="asis"}
+```{r plot_land_sf_v_avg_comp_town, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_land_sf",
@@ -1138,7 +1120,7 @@ plot_ind_char_obs(
 
 ### Land S.F. By Class
 
-```{r plot_land_sf_v_avg_comp_class, results="asis"}
+```{r plot_land_sf_v_avg_comp_class, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_land_sf",
