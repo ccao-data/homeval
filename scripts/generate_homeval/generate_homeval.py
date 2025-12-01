@@ -10,16 +10,16 @@ Examples
 --------
 Generate every PIN:
     $ python3 generate_homeval.py \
-          --run-id 2025-04-25-fancy-free-billy \
+          --run-id 2025-06-14-flamboyant-rob \
 
 Generate two specific PINs:
     $ python3 generate_homeval.py \
-          --run-id 2025-04-25-fancy-free-billy \
+          --run-id 2025-06-14-flamboyant-rob \
           --pin 01011000040000 10112040080000
 
 Generate every PIN in towns 10 and 11:
     $ python3 generate_homeval.py \
-          --run-id 2025-04-25-fancy-free-billy \
+          --run-id 2025-06-14-flamboyant-rob \
           --township 10 11
 """
 
@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--run-id",
         required=True,
-        help="Comps run ID used by the pinval.vw_comps view (e.g. 2025-04-25-fancy-free-billy)",
+        help="Comps run ID used by the pinval.vw_comps view (e.g. 2025-06-14-flamboyant-rob)",
     )
 
     parser.add_argument(
