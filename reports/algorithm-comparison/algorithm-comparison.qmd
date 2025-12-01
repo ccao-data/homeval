@@ -1,17 +1,41 @@
+
 ---
-title: "Comparables Validity Analysis"
-author: "Dan Snow and Jean Cochrane"
-date: "2025-01-03"
+title: "Algorithm-Comparison"
+format: html
 execute:
   echo: false
   warning: false
-format:
-  html:
-    embed-resources: true
-    body-width: 900px
+  message: false
+params:
+  year: 2025
+  # descriptions and run_ids must be ordered correspondingly
+  run_id:
+    - "2025-10-18-blissful-sean"
+    - "2025-06-14-flamboyant-rob"
+    - "2025-04-25-fancy-free-billy"
+    - "2025-03-26-vibrant-bowen"
+    - "2025-09-20-fervent-bowen"
+  description:
+    - "Unweighted"
+    - "Unweighted (error-reducing trees only)"
+    - "Error reduction"
+    - "Error reduction (semi-random)"
+    - "Prediction variance"
+  keep_top_n_comps: 5
+  n_years_sales: 3
+
+    # year: 2024
+    # run_id:
+    # - "2025-09-07-adoring-jean"
+    # - "2025-08-28-mystifying-kyra"
+    # - "2024-06-18-calm-nathan"
+    # description:
+    # - "Unweighted (error-reducing trees only)"
+    # - "Error reduction"
+    # - "Error reduction (semi-random)"
 ---
 
-```{r load_data}
+```{r libraries}
 library(arrow)
 library(ccao)
 library(data.table)
@@ -19,60 +43,102 @@ library(dtplyr)
 library(DT)
 library(glue)
 library(gt)
+library(htmltools)
 library(matrixStats)
 library(noctua)
 library(plotly)
 library(readxl)
 library(sf)
 library(tidyverse)
+```
 
-# Kludge function to deal with weird SIGPIPE errors when reading large
-# data from S3 via arrow
-cpp11::cpp_source(code = "
-#include <csignal>
-#include <cpp11.hpp>
 
-[[cpp11::register]] void ignore_sigpipes() {
-  signal(SIGPIPE, SIG_IGN);
-}
-")
-ignore_sigpipes()
+```{r load_data}
+year <- params$year
+n_years_sales <- params$n_years_sales
+keep_top_n_comps <- params$keep_top_n_comps
 
-n_years_sales <- 3
-keep_top_n_comps <- 5 # How many comps to keep
-total_n_comps <- 5 # The total number of comps to analyze
-triad <- "1" # Which tri to filter comps for; should match the run ID
-run_id <- "2024-12-29-compassionate-kyra"
-year <- "2025"
-s3_bucket <- "s3://ccao-model-results-us-east-1"
-
-comps <- read_parquet(glue(
-  "{s3_bucket}/comp/year={year}",
-  "/run_id={run_id}/part-0.parquet"
-))
-preds_pin <- collect(open_dataset(glue(
-  "{s3_bucket}/assessment_pin/year={year}",
-  "/run_id={run_id}/"
-)))
-preds_card <- collect(open_dataset(glue(
-  "{s3_bucket}/assessment_card/year={year}",
-  "/run_id={run_id}/"
-)))
-
-# Load training data from the DVC cache to grab characteristics for comps
-dvc_md5_hash <- read_parquet(
-  glue("{s3_bucket}/metadata/year={year}/{run_id}.parquet")
-) %>%
-  pull(dvc_md5_training_data)
-
-training_data_prefix <- dvc_md5_hash %>% substr(1, 2)
-training_data_filename <- dvc_md5_hash %>% substr(3, nchar(dvc_md5_hash))
-
-training_data <- read_parquet(
-  glue(
-    "s3://ccao-data-dvc-us-east-1/files/md5/{training_data_prefix}/{training_data_filename}"
-  )
+triad <- dplyr::case_when(
+  year %% 3 == 0 ~ "2",
+  year %% 3 == 1 ~ "3",
+  year %% 3 == 2 ~ "1"
 )
+
+s3_bucket <- "s3://ccao-model-results-us-east-1"
+run_ids <- params$run_id
+
+run_tbl <- tibble::tibble(
+  run_id = params$run_id,
+  description = params$description
+)
+
+data <- pmap(
+  .l = list(run_id = run_tbl$run_id, description = run_tbl$description),
+  .f = function(run_id, description) {
+    message("Processing run_id: ", run_id, " (", description, ")")
+
+    comps <- read_parquet(glue(
+      "{s3_bucket}/comp/year={year}/run_id={run_id}/part-0.parquet"
+    )) %>%
+      mutate(
+        year = !!year, run_id = !!run_id, description = !!description,
+        .before = 1
+      )
+
+    preds_pin <- collect(open_dataset(glue(
+      "{s3_bucket}/assessment_pin/year={year}/run_id={run_id}/"
+    ))) %>%
+      mutate(
+        year = !!year, run_id = !!run_id, description = !!description,
+        .before = 1
+      )
+
+    preds_card <- collect(open_dataset(glue(
+      "{s3_bucket}/assessment_card/year={year}/run_id={run_id}/"
+    ))) %>%
+      mutate(
+        year = !!year, run_id = !!run_id, description = !!description,
+        .before = 1
+      )
+
+    dvc_md5_hash <- read_parquet(
+      glue("{s3_bucket}/metadata/year={year}/{run_id}.parquet")
+    ) %>%
+      pull(dvc_md5_training_data)
+
+    training_data_prefix <- substr(dvc_md5_hash, 1, 2)
+    training_data_filename <- substr(dvc_md5_hash, 3, nchar(dvc_md5_hash))
+
+    training_data <- read_parquet(glue(
+      "s3://ccao-data-dvc-us-east-1/files/md5/{training_data_prefix}/{training_data_filename}" # nolintr
+    )) %>%
+      mutate(
+        year = !!year, run_id = !!run_id, description = !!description,
+        .before = 1
+      )
+
+    list(
+      comps = comps,
+      preds_pin = preds_pin,
+      preds_card = preds_card,
+      training_data = training_data
+    )
+  }
+)
+
+comps <- map(data, "comps") %>%
+  bind_rows()
+
+preds_pin <- map(data, "preds_pin") %>%
+  bind_rows()
+
+preds_card <- map(data, "preds_card") %>%
+  bind_rows()
+
+training_data <- map(data, "training_data") %>%
+  bind_rows()
+
+rm(data)
 
 noctua_options(unload = TRUE)
 conn <- dbConnect(noctua::athena(), rstudio_conn_tab = FALSE)
@@ -98,48 +164,28 @@ agg_log_char_sql <- function(agg_fun, charname, floor) {
 agg_char_stats <- dbGetQuery(
   conn,
   # Make sure to log all sqft features, since they aren't normally distributed.
-  # Beds and baths are also not normally distributed but they're difficult to
-  # normalize since 0 is an important value to preserve
   glue("
   select
     year,
     avg(cast(char_yrblt as double)) as agg_avg_yrblt,
     {agg_log_char_sql('avg', 'char_bldg_sf', floor = 1)},
     {agg_log_char_sql('avg', 'char_land_sf', floor = 1)},
-    avg(cast(char_beds as double)) as agg_avg_beds,
-    avg(cast(char_fbath as double)) as agg_avg_fbath,
-    avg(cast(char_hbath as double)) as agg_avg_hbath,
     stddev(cast(char_yrblt as double)) as agg_stddev_yrblt,
     {agg_log_char_sql('stddev', 'char_bldg_sf', floor = 1)},
-    {agg_log_char_sql('stddev', 'char_land_sf', floor = 1)},
-    stddev(cast(char_beds as double)) as agg_stddev_beds,
-    stddev(cast(char_fbath as double)) as agg_stddev_fbath,
-    stddev(cast(char_hbath as double)) as agg_stddev_hbath
+    {agg_log_char_sql('stddev', 'char_land_sf', floor = 1)}
   from default.vw_card_res_char
   group by year order by year
   ")
 )
-
-# Load 2024 smartfile comps for Jefferson. This file is in
-# enterprise-intelligence/ei-issue-0050/input/ on the O Drive
-smartfile_comps <- read_excel("2024_jefferson_smartfile_comps.xlsx") %>%
-  # Only grab Smartfile comps, ignoring "CCAO" comps (of which there are 4)
-  filter(Source == "SMART") %>%
-  mutate(
-    CARD = as.character(CARD),
-    # Remove dashes from comp columns
-    across(
-      starts_with("COMP"),
-      ~ str_replace_all(., "-", "")
-    )
-  )
 ```
 
-```{r top_char_z_scores}
+
+```{r top_char_scores}
 # Calculate zscores for top chars in training and assessment sets, so that we
 # can compute char distance metrics
 training_data <- training_data %>%
   left_join(agg_char_stats, by = c("meta_year" = "year")) %>%
+  group_by(run_id) %>%
   mutate(
     # Set a floor of 1 for sqft chars so that we can safely log them, similar
     # to how we computed the aggregate averages/stds
@@ -149,15 +195,15 @@ training_data <- training_data %>%
       .names = "{.col}_safe"
     ),
     z_yrblt = (char_yrblt - agg_avg_yrblt) / agg_stddev_yrblt,
-    z_bldg_sf = (log(char_bldg_sf_safe) - agg_avg_log_bldg_sf) / agg_stddev_log_bldg_sf,
-    z_land_sf = (log(char_land_sf_safe) - agg_avg_log_land_sf) / agg_stddev_log_land_sf,
-    z_beds = (char_beds - agg_avg_beds) / agg_stddev_beds,
-    z_hbath = (char_hbath - agg_avg_hbath) / agg_stddev_hbath,
-    z_fbath = (char_fbath - agg_avg_fbath) / agg_stddev_fbath
+    z_bldg_sf =
+      (log(char_bldg_sf_safe) - agg_avg_log_bldg_sf) / agg_stddev_log_bldg_sf,
+    z_land_sf =
+      (log(char_land_sf_safe) - agg_avg_log_land_sf) / agg_stddev_log_land_sf,
   ) %>%
   select(-ends_with("_safe"))
 
 preds_card <- preds_card %>%
+  group_by(run_id) %>%
   left_join(agg_char_stats, by = c("meta_year" = "year")) %>%
   mutate(
     across(
@@ -166,11 +212,10 @@ preds_card <- preds_card %>%
       .names = "{.col}_safe"
     ),
     target_z_yrblt = (char_yrblt - agg_avg_yrblt) / agg_stddev_yrblt,
-    target_z_bldg_sf = (log(char_bldg_sf_safe) - agg_avg_log_bldg_sf) / agg_stddev_log_bldg_sf,
-    target_z_land_sf = (log(char_land_sf_safe) - agg_avg_log_land_sf) / agg_stddev_log_land_sf,
-    target_z_beds = (char_beds - agg_avg_beds) / agg_stddev_beds,
-    target_z_hbath = (char_hbath - agg_avg_hbath) / agg_stddev_hbath,
-    target_z_fbath = (char_fbath - agg_avg_fbath) / agg_stddev_fbath
+    target_z_bldg_sf =
+      (log(char_bldg_sf_safe) - agg_avg_log_bldg_sf) / agg_stddev_log_bldg_sf,
+    target_z_land_sf =
+      (log(char_land_sf_safe) - agg_avg_log_land_sf) / agg_stddev_log_land_sf,
   ) %>%
   select(-ends_with("_safe")) %>%
   rename_with(
@@ -196,24 +241,38 @@ pivot_comps_longer <- function(comps, starts_with_text) {
       mutate(comp_num = as.integer(str_extract(comp_num, "\\d+")))
   )
 }
+comps_pin_long <- comps %>%
+  group_by(run_id) %>%
+  group_modify(~ pivot_comps_longer(.x, "comp_pin")) %>%
+  ungroup()
 
-comps_pin_long <- pivot_comps_longer(comps, "comp_pin")
-comps_score_long <- pivot_comps_longer(comps, "comp_score")
-comps_doc_no_long <- pivot_comps_longer(comps, "comp_document_num")
+comps_score_long <- comps %>%
+  group_by(run_id) %>%
+  group_modify(~ pivot_comps_longer(.x, "comp_score")) %>%
+  ungroup()
+
+comps_doc_no_long <- comps %>%
+  group_by(run_id) %>%
+  group_modify(~ pivot_comps_longer(.x, "comp_document_num")) %>%
+  ungroup()
 
 comps_long <- comps_pin_long %>%
-  left_join(comps_score_long, by = c("pin", "card", "comp_num")) %>%
-  left_join(comps_doc_no_long, by = c("pin", "card", "comp_num")) %>%
+  left_join(comps_score_long,
+    by = c("run_id", "pin", "card", "comp_num")
+  ) %>%
+  left_join(comps_doc_no_long,
+    by = c("run_id", "pin", "card", "comp_num")
+  ) %>%
   rename(target_pin = pin, target_card = card)
 
-# Get PIN geometries from the centroids in the cards data, which is used as
-# the set of "targets" for comps
 card_locs <- preds_card %>%
-  select(meta_pin, meta_card_num, loc_latitude, loc_longitude) %>%
+  ungroup() %>%
+  distinct(meta_pin, meta_card_num, loc_latitude, loc_longitude) %>%
   filter(!is.na(loc_latitude), !is.na(loc_longitude)) %>%
   st_as_sf(coords = c("loc_longitude", "loc_latitude"), crs = 4326) %>%
   st_transform(3435) %>%
   rename(target_geometry = geometry)
+
 
 # Load the sales used to train the model (the source of the comps). Using the
 # same subsetting logic as the model/comps algo to ensure the same sales data
@@ -221,14 +280,11 @@ card_locs <- preds_card %>%
 training_data_clean <- training_data %>%
   filter(!ind_pin_is_multicard, !sv_is_outlier) %>%
   select(
-    meta_pin, meta_card_num,
+    meta_pin, meta_card_num, run_id, description,
     meta_sale_document_num, meta_sale_price, meta_sale_date,
     char_yrblt, z_yrblt, agg_avg_yrblt, agg_stddev_yrblt,
     char_bldg_sf, z_bldg_sf, agg_avg_log_bldg_sf, agg_stddev_log_bldg_sf,
     char_land_sf, z_land_sf, agg_avg_log_land_sf, agg_stddev_log_land_sf,
-    char_beds, z_beds, agg_avg_beds, agg_stddev_beds,
-    char_fbath, z_fbath, agg_avg_fbath, agg_stddev_fbath,
-    char_hbath, z_hbath, agg_avg_hbath, agg_stddev_hbath,
     loc_latitude, loc_longitude
   )
 
@@ -240,7 +296,12 @@ training_data_clean_geo <- training_data_clean %>%
   st_transform(3435)
 
 training_data_clean_no_geo <- training_data_clean %>%
-  filter(is.na(loc_latitude))
+  filter(is.na(loc_latitude)) %>%
+  # create an empty geometry column with same CRS
+  mutate(geometry = st_sfc(rep(st_geometrycollection(), n()),
+    crs = st_crs(training_data_clean_geo)
+  )) %>%
+  st_as_sf()
 
 training_data_clean <- bind_rows(
   training_data_clean_geo,
@@ -260,6 +321,7 @@ merged_model_comps <- comps_long %>%
       select(
         meta_pin,
         meta_card_num,
+        run_id,
         target_township_code = meta_township_code,
         target_nbhd_code = meta_nbhd_code,
         target_class = meta_class,
@@ -267,27 +329,33 @@ merged_model_comps <- comps_long %>%
         target_char_yrblt = char_yrblt,
         target_char_bldg_sf = char_bldg_sf,
         target_char_land_sf = char_land_sf,
-        target_char_beds = char_beds,
-        target_char_fbath = char_fbath,
-        target_char_hbath = char_hbath,
         starts_with("target_")
       ),
-    by = c("target_pin" = "meta_pin", "target_card" = "meta_card_num")
+    by = c(
+      "target_pin" = "meta_pin",
+      "target_card" = "meta_card_num",
+      "run_id" = "run_id"
+    )
   ) %>%
   # Merge target sale price. To do this, we join to any recent sales for the
   # target. Note that this means a many-to-many join, and can create dupes
   # for targets that have sold multiple times in the last n_years_sales
   left_join(
     training_data_clean %>%
-      filter(year(meta_sale_date) >= year(max(meta_sale_date)) + 1 - n_years_sales) %>%
+      filter(year(meta_sale_date) >=
+        year(max(meta_sale_date)) + 1 - n_years_sales) %>% # nolintr
       select(
-        meta_pin, meta_card_num,
+        meta_pin, meta_card_num, run_id,
         target_sale_document_num = meta_sale_document_num,
         target_sale_price = meta_sale_price,
         target_sale_date = meta_sale_date,
       ) %>%
       st_drop_geometry(),
-    by = c("target_pin" = "meta_pin", "target_card" = "meta_card_num"),
+    by = c(
+      "target_pin" = "meta_pin",
+      "target_card" = "meta_card_num",
+      "run_id" = "run_id"
+    ),
     relationship = "many-to-many"
   ) %>%
   # Merge comp chars
@@ -308,163 +376,14 @@ merged_model_comps <- comps_long %>%
         .cols = starts_with("z_") | starts_with("agg_") | starts_with("char_")
       ) %>%
       select(-meta_card_num),
-    by = c("comp_pin" = "meta_pin", "comp_document_num" = "meta_sale_document_num")
+    by = c(
+      "comp_pin" = "meta_pin",
+      "comp_document_num" = "meta_sale_document_num",
+      "run_id" = "run_id"
+    )
   ) %>%
   # Filter for only cards in the selected tri
-  filter(ccao::town_get_triad(target_township_code) == triad)
-
-# For each card, compute the number of smartfile comps that have the same PIN
-# as at least one of the model comps.
-# Start by pivoting the comps longer so that we can cross join them to the
-# model comps for fast comparison
-smartfile_comps_pivoted <- smartfile_comps %>%
-  pivot_longer(
-    cols = starts_with("COMP"),
-    names_to = "comp_num",
-    values_to = "comp_pin"
-  ) %>%
-  # Filter for only sales. We don't care about other comps, because they aren't
-  # comparable to the model comps, which we draw from sales
-  filter(
-    comp_pin %in% (training_data %>% distinct(meta_pin) %>% pull(meta_pin))
-  ) %>%
-  mutate(
-    comp_num = as.integer(str_extract(comp_num, "\\d+")),
-  )
-
-smartfile_comp_matches <- smartfile_comps_pivoted %>%
-  rename(smartfile_comp_num = comp_num, smartfile_comp_pin = comp_pin) %>%
-  left_join(
-    merged_model_comps %>%
-      select(
-        target_pin, target_card,
-        model_comp_num = comp_num,
-        model_comp_pin = comp_pin
-      ),
-    by = c("PARID" = "target_pin", "CARD" = "target_card"),
-    relationship = "many-to-many"
-  ) %>%
-  mutate(
-    comp_match = (
-      !is.na(smartfile_comp_pin) & !is.na(model_comp_pin) &
-        smartfile_comp_pin == model_comp_pin
-    )
-  ) %>%
-  # First, group by Smartfile comp so that we can count how many model comps
-  # match it
-  group_by(PARID, CARD, smartfile_comp_num) %>%
-  summarise(comps_match = sum(comp_match), .groups = "keep") %>%
-  # Finally, group by card so that we can count the number of total matches
-  # across all Smartfile comps
-  group_by(PARID, CARD) %>%
-  summarise(tot_match_count = sum(comps_match), .groups = "keep")
-
-# Merge model comps and smartfile comps separately for the comp comparison
-merged_smartfile_comps <- smartfile_comps_pivoted %>%
-  # Join to card locations so we can compute distances to comps
-  left_join(
-    card_locs,
-    by = c("PARID" = "meta_pin", "CARD" = "meta_card_num")
-  ) %>%
-  # Join to card chars to grab class
-  left_join(
-    preds_card %>%
-      select(
-        meta_pin, meta_card_num,
-        target_class = meta_class,
-        target_char_yrblt = char_yrblt,
-        target_char_bldg_sf = char_bldg_sf,
-        target_char_beds = char_beds,
-        target_char_land_sf = char_land_sf
-      ),
-    by = c("PARID" = "meta_pin", "CARD" = "meta_card_num")
-  ) %>%
-  # Join to aggregate match counts
-  left_join(smartfile_comp_matches, by = c("PARID", "CARD")) %>%
-  # Join to latest sale to get characteristics. No need to worry about card
-  # when grouping sales to get the latest one, since we filtered out
-  # multicard properties above per the comps spec
-  left_join(
-    training_data_clean %>%
-      as.data.frame() %>%
-      group_by(meta_pin) %>%
-      arrange(desc(meta_sale_date)) %>%
-      distinct(meta_pin, .keep_all = TRUE) %>%
-      ungroup() %>%
-      select(
-        meta_pin,
-        comp_char_yrblt = char_yrblt,
-        comp_char_bldg_sf = char_bldg_sf,
-        comp_char_land_sf = char_land_sf,
-        comp_char_beds = char_beds,
-        comp_geometry = geometry
-      ),
-    by = c("comp_pin" = "meta_pin")
-  ) %>%
-  # Comp score is only useful in the model comp context, but we need it here
-  # in order to match the model comp schema when we join to it
-  mutate(source = "smartfile", comp_score = 1) %>%
-  select(
-    target_pin = "PARID",
-    target_card = "CARD",
-    target_class,
-    target_char_yrblt,
-    target_char_bldg_sf,
-    target_char_beds,
-    target_char_land_sf,
-    target_geometry,
-    source,
-    comp_num,
-    comp_pin,
-    comp_score,
-    comp_char_yrblt,
-    comp_char_bldg_sf,
-    comp_char_land_sf,
-    comp_char_beds,
-    comp_geometry,
-    tot_match_count
-  ) %>%
-  # Union to model comps, with a dedicated `source` column value to keep them
-  # separated from smartfile comps
-  union_all(
-    merged_model_comps %>%
-      # Filter for only Jefferson comps, so that we have a similar universe
-      # of parcels as the smartfile comps
-      filter(target_township_code == "71") %>%
-      # Match count doesn't matter for model comps, but we need it to match the
-      # schema to smartfile comps
-      mutate(source = "model", tot_match_count = NA) %>%
-      select(
-        target_pin,
-        target_card,
-        target_class,
-        target_char_yrblt,
-        target_char_bldg_sf,
-        target_char_beds,
-        target_char_land_sf,
-        target_geometry,
-        source,
-        comp_num,
-        comp_pin,
-        comp_score,
-        comp_char_yrblt,
-        comp_char_bldg_sf,
-        comp_char_land_sf,
-        comp_char_beds,
-        comp_geometry,
-        tot_match_count
-      )
-  ) %>%
-  # Compute distances between targets and comps
-  mutate(
-    targ_to_comp_dist_ft = st_distance(
-      target_geometry, comp_geometry,
-      by_element = TRUE
-    )
-  ) %>%
-  # Drop geometry columns, which we don't need now that we have distances
-  select(-target_geometry, -comp_geometry) %>%
-  st_drop_geometry()
+  filter(town_get_triad(target_township_code) == triad)
 
 # Calculate the distance between the target and each comparable property/sale
 merged_w_dist <- merged_model_comps %>%
@@ -476,9 +395,6 @@ merged_w_dist <- merged_model_comps %>%
     targ_to_comp_dist_yrblt = abs(target_z_yrblt - comp_z_yrblt),
     targ_to_comp_dist_bldg_sf = abs(target_z_bldg_sf - comp_z_bldg_sf),
     targ_to_comp_dist_land_sf = abs(target_z_land_sf - comp_z_land_sf),
-    targ_to_comp_dist_beds = abs(target_z_beds - comp_z_beds),
-    targ_to_comp_dist_hbath = abs(target_z_hbath - comp_z_hbath),
-    targ_to_comp_dist_fbath = abs(target_z_fbath - comp_z_fbath)
   ) %>%
   select(-target_geometry, -comp_geometry) %>%
   st_drop_geometry()
@@ -487,8 +403,8 @@ merged_w_dist <- merged_model_comps %>%
 merged_w_flags <- merged_w_dist %>%
   left_join(
     preds_pin %>%
-      select(meta_pin, pred_pin_initial_fmv, pred_pin_final_fmv),
-    by = c("target_pin" = "meta_pin")
+      select(meta_pin, pred_pin_initial_fmv, pred_pin_final_fmv, run_id),
+    by = c("target_pin" = "meta_pin", "run_id")
   ) %>%
   setDT(key = c("target_pin", "target_card"))
 
@@ -503,11 +419,12 @@ merged_no_flags <- merged_w_dist %>%
         !flag_pin_is_multiland,
         !flag_proration_sum_not_1
       ) %>%
-      select(meta_pin, pred_pin_initial_fmv, pred_pin_final_fmv),
-    by = c("target_pin" = "meta_pin")
+      select(meta_pin, pred_pin_initial_fmv, pred_pin_final_fmv, run_id),
+    by = c("target_pin" = "meta_pin", "run_id")
   ) %>%
   setDT(key = c("target_pin", "target_card"))
 ```
+
 
 ```{r cleanup, results="hide"}
 # Cleanup unused data to free up disk space
@@ -515,7 +432,6 @@ rm(
   training_data, training_data_clean,
   training_data_clean_geo, training_data_clean_no_geo, card_locs,
   comps, comps_doc_no_long, comps_long, comps_pin_long, comps_score_long,
-  smartfile_comps, smartfile_comps_pivoted, smartfile_comp_matches,
   agg_char_stats,
   merged_model_comps, merged_w_dist, preds_card, preds_pin
 )
@@ -523,64 +439,6 @@ gc()
 ```
 
 ```{r helper_funcs}
-# Function to calculate aggregate comp statistics per group and number of comps
-gen_agg_stats <- function(df, group_by, n) {
-  by_pin <- df[, .(
-    pred_pin_final_fmv = data.table::first(pred_pin_final_fmv),
-    target_sale_price = data.table::first(target_sale_price),
-    wt_avg_comp_sale_price = weighted.mean(
-      comp_sale_price, comp_score,
-      na.rm = TRUE
-    )
-  ), by = c("target_pin", group_by)][, .(
-    corr_comp_pin_pred = cor(
-      wt_avg_comp_sale_price,
-      pred_pin_final_fmv,
-      use = "pairwise.complete.obs"
-    ),
-    corr_comp_target_sale = cor(
-      wt_avg_comp_sale_price,
-      target_sale_price,
-      use = "pairwise.complete.obs"
-    )
-  ), by = group_by]
-  if (!is.null(group_by)) by_pin[, group_by] <- NULL
-
-  by_g <- df[, .(
-    n = .N / n,
-    n_sales = sum(!is.na(target_sale_price)) / n,
-    med_pin_pred_price = median(pred_pin_final_fmv, na.rm = TRUE),
-    med_target_sale_price = median(target_sale_price, na.rm = TRUE),
-    wt_med_comp_sale_price = matrixStats::weightedMedian(
-      comp_sale_price, comp_score,
-      na.rm = TRUE
-    ),
-    med_target_sale_date = median(target_sale_date, na.rm = TRUE),
-    wt_med_comp_sale_date = as.Date(matrixStats::weightedMedian(
-      comp_sale_date, comp_score,
-      na.rm = TRUE
-    )),
-    med_comp_dist_ft = median(targ_to_comp_dist_ft, na.rm = TRUE),
-    avg_comp_dist_ft = mean(targ_to_comp_dist_ft, na.rm = TRUE),
-    med_comp_dist_yrblt_sd = median(targ_to_comp_dist_yrblt, na.rm = TRUE),
-    avg_comp_dist_yrblt_sd = mean(targ_to_comp_dist_yrblt, na.rm = TRUE),
-    med_comp_dist_bldg_sf_sd = median(targ_to_comp_dist_bldg_sf, na.rm = TRUE),
-    avg_comp_dist_bldg_sf_sd = mean(targ_to_comp_dist_bldg_sf, na.rm = TRUE),
-    med_comp_dist_land_sf_sd = median(targ_to_comp_dist_land_sf, na.rm = TRUE),
-    avg_comp_dist_land_sf_sd = mean(targ_to_comp_dist_land_sf, na.rm = TRUE),
-    med_comp_dist_beds_sd = median(targ_to_comp_dist_beds, na.rm = TRUE),
-    avg_comp_dist_beds_sd = mean(targ_to_comp_dist_beds, na.rm = TRUE),
-    med_comp_dist_fbath_sd = median(targ_to_comp_dist_fbath, na.rm = TRUE),
-    avg_comp_dist_fbath_sd = mean(targ_to_comp_dist_fbath, na.rm = TRUE),
-    med_comp_dist_hbath_sd = median(targ_to_comp_dist_hbath, na.rm = TRUE),
-    avg_comp_dist_hbath_sd = mean(targ_to_comp_dist_hbath, na.rm = TRUE),
-    med_comp_score = median(comp_score, na.rm = TRUE)
-  ), by = group_by]
-
-  return(cbind(by_g, by_pin))
-}
-
-# Function to format the aggregate comp statistics for display in a datatable
 format_agg_stats <- function(df) {
   df %>%
     datatable(
@@ -593,9 +451,9 @@ format_agg_stats <- function(df) {
         "Num. Sales" = "n_sales",
         "Med. PIN Pred. Price" = "med_pin_pred_price",
         "Med. Target Sale Price" = "med_target_sale_price",
-        "Wt. Med. Comp. Sale Price" = "wt_med_comp_sale_price",
+        "Med. Comp. Sale Price" = "med_comp_sale_price",
         "Med. Target Sale Date" = "med_target_sale_date",
-        "Wt. Med. Comp. Sale Date" = "wt_med_comp_sale_date",
+        "Med. Comp. Sale Date" = "med_comp_sale_date",
         "Med. Comp. Dist. (ft)" = "med_comp_dist_ft",
         "Avg. Comp. Dist. (ft)" = "avg_comp_dist_ft",
         "Med. Comp. Score" = "med_comp_score",
@@ -606,13 +464,7 @@ format_agg_stats <- function(df) {
         "Med. Comp. Log Bldg. S.F. Dist. (S.D.)" = "med_comp_dist_bldg_sf_sd",
         "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)" = "avg_comp_dist_bldg_sf_sd",
         "Med. Comp. Log Land S.F. Dist. (S.D.)" = "med_comp_dist_land_sf_sd",
-        "Avg. Comp. Log Land S.F. Dist. (S.D.)" = "avg_comp_dist_land_sf_sd",
-        "Med. Comp. Beds Dist. (S.D.)" = "med_comp_dist_beds_sd",
-        "Avg. Comp. Beds Dist. (S.D.)" = "avg_comp_dist_beds_sd",
-        "Med. Comp. Full Bath Dist. (S.D.)" = "med_comp_dist_fbath_sd",
-        "Avg. Comp. Full Bath Dist. (S.D.)" = "avg_comp_dist_fbath_sd",
-        "Med. Comp. Half Bath Dist. (S.D.)" = "med_comp_dist_hbath_sd",
-        "Avg. Comp. Half Bath Dist. (S.D.)" = "avg_comp_dist_hbath_sd"
+        "Avg. Comp. Log Land S.F. Dist. (S.D.)" = "avg_comp_dist_land_sf_sd"
       ),
       options = list(
         autoWidth = TRUE,
@@ -638,190 +490,320 @@ format_agg_stats <- function(df) {
     formatRound(
       c(
         "Med. Comp. Yrblt. Dist. (S.D.)", "Avg. Comp. Yrblt. Dist. (S.D.)",
-        "Med. Comp. Log Bldg. S.F. Dist. (S.D.)", "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)",
-        "Med. Comp. Log Land S.F. Dist. (S.D.)", "Avg. Comp. Log Land S.F. Dist. (S.D.)",
-        "Med. Comp. Beds Dist. (S.D.)", "Avg. Comp. Beds Dist. (S.D.)",
-        "Med. Comp. Full Bath Dist. (S.D.)", "Avg. Comp. Full Bath Dist. (S.D.)",
-        "Med. Comp. Half Bath Dist. (S.D.)", "Avg. Comp. Half Bath Dist. (S.D.)"
+        "Med. Comp. Log Bldg. S.F. Dist. (S.D.)",
+        "Avg. Comp. Log Bldg. S.F. Dist. (S.D.)",
+        "Med. Comp. Log Land S.F. Dist. (S.D.)",
+        "Avg. Comp. Log Land S.F. Dist. (S.D.)"
       ),
       digits = 3
     ) %>%
     formatCurrency(
       c(
         "Med. PIN Pred. Price", "Med. Target Sale Price",
-        "Wt. Med. Comp. Sale Price"
+        "Med. Comp. Sale Price"
       ),
       currency = "$",
       digits = 0
     )
 }
 
-# Function to create line plots of a statistic varying by number of comps and
-# a group (township, class)
-plot_n_comps_by_grp <- function(df, y, grp, y_lab, grp_lab) {
-  plt <- df %>%
-    ggplot() +
-    geom_line(
-      aes(
-        group = get(grp),
-        x = n_comps,
-        y = get(y),
-        color = get(grp)
-      )
-    ) +
-    geom_point(
-      aes(
-        group = get(grp),
-        x = n_comps,
-        y = get(y),
-        color = get(grp),
-        text = paste0(
-          grp_lab, ": ", get(grp), "<br>",
-          "Med. Sale Price: ", scales::dollar(med_target_sale_price, accuracy = 1), "<br>",
-          "Med. Estimate FMV: ", scales::dollar(med_pin_pred_price, accuracy = 1), "<br>",
-          "Wt. Med. Comp. Price: ", scales::dollar(wt_med_comp_sale_price, accuracy = 1), "<br>",
-          "Med. Comp. Dist.: ", round(med_comp_dist_ft, 2), "<br>",
-          "Med. Comp. Yrblt. Dist.: ", round(med_comp_dist_yrblt_sd, 3), "<br>",
-          "Med. Comp. Log Bldg. S.F. Dist.: ", round(med_comp_dist_bldg_sf_sd, 3), "<br>",
-          "Med. Comp. Log Land S.F. Dist.: ", round(med_comp_dist_land_sf_sd, 3), "<br>",
-          "Med. Comp. Beds Dist.: ", round(med_comp_dist_beds_sd, 3), "<br>",
-          "Med. Comp. Full Bath Dist.: ", round(med_comp_dist_fbath_sd, 3), "<br>",
-          "Med. Comp. Half Bath Dist.: ", round(med_comp_dist_hbath_sd, 3), "<br>",
-          "Med. Comp. Score: ", scales::percent(med_comp_score, accuracy = 1)
-        )
-      )
-    ) +
-    scale_x_continuous(
-      name = "Number of Comps",
-      n.breaks = total_n_comps
-    ) +
-    scale_y_continuous(name = y_lab) +
-    labs(color = grp_lab) +
-    theme_minimal()
+# Function to calculate aggregate comp statistics per group and number of comps
+gen_agg_stats <- function(df, group_cols, n) {
+  df <- data.table::as.data.table(df)
 
-  gplt <- ggplotly(plt, tooltip = "text")
+  by_pin <- df[
+    ,
+    .(
+      pred_pin_final_fmv = data.table::first(pred_pin_final_fmv),
+      target_sale_price = data.table::first(target_sale_price),
+      avg_comp_sale_price = mean(
+        comp_sale_price,
+        na.rm = TRUE
+      )
+    ),
+    by = c("target_pin", group_cols)
+  ][
+    ,
+    .(
+      corr_comp_pin_pred = cor(
+        avg_comp_sale_price,
+        pred_pin_final_fmv,
+        use = "pairwise.complete.obs"
+      ),
+      corr_comp_target_sale = cor(
+        avg_comp_sale_price,
+        target_sale_price,
+        use = "pairwise.complete.obs"
+      )
+    ),
+    by = group_cols
+  ]
 
-  return(gplt)
+  by_g <- df[
+    ,
+    .(
+      n = .N / n,
+      n_sales = sum(!is.na(target_sale_price)) / n,
+      med_pin_pred_price = median(pred_pin_final_fmv, na.rm = TRUE),
+      med_target_sale_price = median(target_sale_price, na.rm = TRUE),
+      med_comp_sale_price = median(comp_sale_price, na.rm = TRUE),
+      med_target_sale_date = median(target_sale_date, na.rm = TRUE),
+      med_comp_sale_date = median(comp_sale_date, na.rm = TRUE),
+      med_comp_dist_ft = median(targ_to_comp_dist_ft, na.rm = TRUE),
+      avg_comp_dist_ft = mean(targ_to_comp_dist_ft, na.rm = TRUE),
+      med_comp_dist_yrblt_sd = median(targ_to_comp_dist_yrblt, na.rm = TRUE),
+      avg_comp_dist_yrblt_sd = mean(targ_to_comp_dist_yrblt, na.rm = TRUE),
+      med_comp_dist_bldg_sf_sd =
+        median(targ_to_comp_dist_bldg_sf, na.rm = TRUE),
+      avg_comp_dist_bldg_sf_sd = mean(targ_to_comp_dist_bldg_sf, na.rm = TRUE),
+      med_comp_dist_land_sf_sd =
+        median(targ_to_comp_dist_land_sf, na.rm = TRUE),
+      avg_comp_dist_land_sf_sd = mean(targ_to_comp_dist_land_sf, na.rm = TRUE),
+      med_comp_score = median(comp_score, na.rm = TRUE)
+    ),
+    by = group_cols
+  ]
+
+
+  out <- merge(
+    by_g,
+    by_pin,
+    by = group_cols,
+    all.x = TRUE
+  )
+
+  return(out[])
 }
 
-# Function to help create a scatter plot comparing target/comp/predicted price
-plot_ind_obs <- function(df, x, y, grp, x_lab, y_lab, grp_lab) {
-  plt <- df %>%
-    ggplot() +
-    geom_point(
-      aes(
-        group = target_pin,
-        x = get(x),
-        y = get(y),
-        color = get(grp),
-        text = paste0(
-          "Township: ", target_township_name, "<br>",
-          "PIN: ", target_pin, "<br>",
-          "Class: ", target_class, "<br>",
-          "Sale Price: ", scales::dollar(target_sale_price, accuracy = 1), "<br>",
-          "Estimate FMV: ", scales::dollar(pred_pin_final_fmv, accuracy = 1), "<br>",
-          "Avg. Comp. Price: ", scales::dollar(wt_avg_comp_sale_price, accuracy = 1), "<br>",
-          "Avg. Comp. Score: ", scales::percent(avg_comp_score, accuracy = 1)
+plot_ind_obs <- function(
+    df,
+    x, y, grp,
+    x_lab, y_lab, grp_lab,
+    slope = 1,
+    id_prefix = "desc") {
+  df <- df %>%
+    dplyr::mutate(description = as.character(description))
+
+  desc_vals <- df %>%
+    dplyr::distinct(description) %>%
+    dplyr::pull(description)
+
+  nav_tabs <- vector("list", length(desc_vals))
+  tab_contents <- vector("list", length(desc_vals))
+
+  for (idx in seq_along(desc_vals)) {
+    desc_val <- desc_vals[[idx]]
+
+    df_desc <- df %>%
+      dplyr::filter(.data$description == desc_val)
+
+    plt <- df_desc %>%
+      ggplot() +
+      geom_point(
+        aes(
+          group = target_pin,
+          x = get(x),
+          y = get(y),
+          color = get(grp),
+          text = paste0(
+            "Township: ", target_township_name, "<br>",
+            "PIN: ", target_pin, "<br>",
+            "Class: ", target_class, "<br>",
+            "Sale Price: ",
+            scales::dollar(target_sale_price, accuracy = 1), "<br>",
+            "Estimate FMV: ",
+            scales::dollar(pred_pin_final_fmv, accuracy = 1), "<br>",
+            "Avg. Comp. Price: ",
+            scales::dollar(avg_comp_sale_price, accuracy = 1), "<br>",
+            "Avg. Comp. Score: ",
+            scales::percent(avg_comp_score, accuracy = 1)
+          )
+        )
+      ) +
+      geom_abline(slope = slope, intercept = 0) +
+      scale_x_continuous(
+        name = x_lab,
+        labels = scales::label_dollar(
+          accuracy = 1,
+          scale    = 1 / 1000,
+          suffix   = "K"
+        ),
+        n.breaks = 8,
+        limits = c(0, 1.5e6)
+      ) +
+      scale_y_continuous(
+        name = y_lab,
+        labels = scales::label_dollar(
+          accuracy = 1,
+          scale    = 1 / 1000,
+          suffix   = "K"
+        ),
+        n.breaks = 8,
+        limits = c(0, 1.5e6)
+      ) +
+      labs(
+        title = paste("Run:", desc_val),
+        color = grp_lab
+      ) +
+      theme_minimal()
+
+    tab_id <- glue::glue("tabset-{id_prefix}-{idx}")
+
+    nav_tabs[[idx]] <- htmltools::withTags(
+      li(
+        class = "nav-item",
+        role = "presentation",
+        a(
+          class            = if (idx == 1) "nav-link active" else "nav-link",
+          id               = glue::glue("{tab_id}-tab"),
+          "data-bs-toggle" = "tab",
+          "data-bs-target" = glue::glue("#{tab_id}"),
+          role             = "tab",
+          "aria-controls"  = tab_id,
+          "aria-selected"  = if (idx == 1) "true" else "false",
+          href             = "",
+          desc_val
         )
       )
-    ) +
-    geom_abline(slope = 1, intercept = 0) +
-    scale_x_continuous(
-      name = x_lab,
-      labels = scales::label_dollar(
-        accuracy = 1,
-        scale = 1 / 1000,
-        suffix = "K"
-      ),
-      n.breaks = 8,
-      limits = c(0, 1.5e6)
-    ) +
-    scale_y_continuous(
-      name = y_lab,
-      labels = scales::label_dollar(
-        accuracy = 1,
-        scale = 1 / 1000,
-        suffix = "K"
-      ),
-      n.breaks = 8,
-      limits = c(0, 1.5e6)
-    ) +
-    labs(color = grp_lab) +
-    theme_minimal()
+    )
 
-  gplt <- ggplotly(plt, tooltip = "text")
+    tab_contents[[idx]] <- htmltools::withTags(
+      div(
+        id = tab_id,
+        class = if (idx == 1) "tab-pane active" else "tab-pane",
+        role = "tabpanel",
+        "aria-labelledby" = glue::glue("{tab_id}-tab"),
+        ggplotly(plt, tooltip = "text")
+      )
+    )
+  }
 
-  return(gplt)
+  htmltools::withTags(
+    div(
+      class = "panel-tabset",
+      ul(
+        class = "nav nav-tabs",
+        role  = "tablist",
+        nav_tabs
+      ),
+      div(
+        class = "tab-content",
+        tab_contents
+      )
+    )
+  )
 }
 
-# Version of plot_ind_obs for characteristics
 plot_ind_char_obs <- function(
-    df, x, y, grp, x_lab, y_lab, grp_lab, slope = 1, labels = waiver()) {
-  plt <- df %>%
-    ggplot() +
-    geom_point(
-      aes(
-        group = target_pin,
-        x = get(x),
-        y = get(y),
-        color = get(grp),
-        text = paste0(
-          "Township: ", target_township_name, "<br>",
-          "PIN: ", target_pin, "<br>",
-          "Class: ", target_class, "<br>",
-          "Estimate FMV: ", scales::dollar(pred_pin_final_fmv, accuracy = 1), "<br>",
-          "Median Comp. Dist. (ft.): ", round(med_comp_dist_ft, 2), "<br>",
-          "Wt. Avg. Comp. Dist. (ft.): ", round(wt_avg_comp_dist_ft, 2), "<br>",
-          "Target Yrblt.: ", target_char_yrblt, "<br>",
-          "Wt. Avg. Comp. Yrblt.: ", round(wt_avg_comp_char_yrblt, 2), "<br>",
-          "Target Bldg. S.F.: ", target_char_bldg_sf, "<br>",
-          "Wt. Avg. Comp. Bldg. S.F.: ", round(wt_avg_comp_char_bldg_sf, 2), "<br>",
-          "Target Land S.F.: ", target_char_land_sf, "<br>",
-          "Wt. Avg. Comp. Land S.F.: ", round(wt_avg_comp_char_land_sf, 2), "<br>",
-          "Target Beds: ", target_char_beds, "<br>",
-          "Wt. Avg. Comp. Beds: ", round(wt_avg_comp_char_beds, 2), "<br>",
-          "Target Full Baths: ", target_char_fbath, "<br>",
-          "Wt. Avg. Comp. Full Baths: ", round(wt_avg_comp_char_fbath, 2), "<br>",
-          "Target Half Baths: ", target_char_hbath, "<br>",
-          "Wt. Avg. Comp. Half Baths: ", round(wt_avg_comp_char_hbath, 2), "<br>",
-          "Avg. Comp. Score: ", scales::percent(avg_comp_score, accuracy = 1)
+    df, x, y, grp, x_lab, y_lab, grp_lab,
+    slope = 1, labels = waiver(),
+    id_prefix = "desc") {
+  df <- df %>%
+    dplyr::mutate(description = as.character(description))
+
+  desc_vals <- df %>%
+    dplyr::distinct(description) %>%
+    dplyr::pull(description)
+
+  nav_tabs <- vector("list", length(desc_vals))
+  tab_contents <- vector("list", length(desc_vals))
+
+  for (idx in seq_along(desc_vals)) {
+    desc_val <- desc_vals[[idx]]
+
+    df_desc <- df %>%
+      dplyr::filter(.data$description == desc_val)
+
+    plt <- df_desc %>%
+      ggplot() +
+      geom_point(
+        aes(
+          group = target_pin,
+          x = get(x),
+          y = get(y),
+          color = get(grp),
+          text = paste0(
+            "Township: ", target_township_name, "<br>",
+            "PIN: ", target_pin, "<br>",
+            "Class: ", target_class, "<br>",
+            "Estimate FMV: ",
+            scales::dollar(pred_pin_final_fmv, accuracy = 1), "<br>",
+            "Median Comp. Dist. (ft.): ",
+            round(med_comp_dist_ft, 2), "<br>",
+            "Avg. Comp. Dist. (ft.): ",
+            round(avg_comp_dist_ft, 2), "<br>",
+            "Target Yrblt.: ", target_char_yrblt, "<br>",
+            "Avg. Comp. Yrblt.: ",
+            round(avg_comp_char_yrblt, 2), "<br>",
+            "Target Bldg. S.F.: ", target_char_bldg_sf, "<br>",
+            "Avg. Comp. Bldg. S.F.: ",
+            round(avg_comp_char_bldg_sf, 2), "<br>",
+            "Target Land S.F.: ", target_char_land_sf, "<br>",
+            "Avg. Comp. Land S.F.: ",
+            round(avg_comp_char_land_sf, 2), "<br>",
+            "Avg. Comp. Score: ",
+            scales::percent(avg_comp_score, accuracy = 1)
+          )
+        )
+      ) +
+      geom_abline(slope = slope, intercept = 0) +
+      scale_x_continuous(name = x_lab, labels = labels) +
+      scale_y_continuous(name = y_lab) +
+      labs(
+        title = paste("Run:", desc_val),
+        color = grp_lab
+      ) +
+      theme_minimal()
+
+    tab_id <- glue::glue("tabset-{id_prefix}-{idx}")
+
+    nav_tabs[[idx]] <- htmltools::withTags(
+      li(
+        class = "nav-item",
+        role = "presentation",
+        a(
+          class            = if (idx == 1) "nav-link active" else "nav-link",
+          id               = glue::glue("{tab_id}-tab"),
+          "data-bs-toggle" = "tab",
+          "data-bs-target" = glue::glue("#{tab_id}"),
+          role             = "tab",
+          "aria-controls"  = tab_id,
+          "aria-selected"  = if (idx == 1) "true" else "false",
+          href             = "",
+          desc_val
         )
       )
-    ) +
-    geom_abline(slope = slope, intercept = 0) +
-    scale_x_continuous(
-      name = x_lab,
-      labels = labels
-    ) +
-    scale_y_continuous(name = y_lab) +
-    labs(color = grp_lab) +
-    theme_minimal()
+    )
 
-  gplt <- ggplotly(plt, tooltip = "text")
+    tab_contents[[idx]] <- htmltools::withTags(
+      div(
+        id = tab_id,
+        class = if (idx == 1) "tab-pane active" else "tab-pane",
+        role = "tabpanel",
+        "aria-labelledby" = glue::glue("{tab_id}-tab"),
+        ggplotly(plt, tooltip = "text")
+      )
+    )
+  }
 
-  return(gplt)
+  htmltools::withTags(
+    div(
+      class = "panel-tabset",
+      ul(
+        class = "nav nav-tabs",
+        role  = "tablist",
+        nav_tabs
+      ),
+      div(
+        class = "tab-content",
+        tab_contents
+      )
+    )
+  )
 }
 ```
 
 ## Topline Aggregate Stats
-
-In 2023, the Cook County Assessor's Office (CCAO) developed a new algorithm to
-extract comparable sales from the data used to train its primary residential
-valuation model. The details of that algorithm are described in [this vignette](https://ccao-data.github.io/lightsnip/articles/finding-comps.html).
-
-The algorithm returns **20** comparable sales for each residential property,
-ranked by a relative score (higher is better). The goal of this document is to
-determine if those comparable sales are:
-
-- Accurate, i.e. roughly reflect the market value of target properties
-  with sales and are correlated with model predictions
-- Well-behaved, i.e. do not exhibit any unexpected patterns
-- Intuitive, i.e. conform to the rough expectations of real estate professionals
-- Consistent across different townships and property classes
-
-The table below contains aggregate stats for the top **`r keep_top_n_comps`**
-comparable sales for different groupings. The plots below that show the same
-statistics, but broken out for different numbers of comparable sales.
 
 ::: {.panel-tabset}
 
@@ -832,7 +814,10 @@ statistics, but broken out for different numbers of comparable sales.
 
 merged_no_flags %>%
   filter(comp_num <= keep_top_n_comps) %>%
-  gen_agg_stats(NULL, keep_top_n_comps) %>%
+  gen_agg_stats(
+    group_cols = c("description"),
+    n = keep_top_n_comps
+  ) %>%
   format_agg_stats()
 ```
 
@@ -843,7 +828,11 @@ merged_no_flags %>%
 
 merged_no_flags %>%
   filter(comp_num <= keep_top_n_comps) %>%
-  gen_agg_stats("target_township_code", keep_top_n_comps) %>%
+  gen_agg_stats(
+    group_cols = c("target_township_code", "description"),
+    n = keep_top_n_comps
+  ) %>%
+  as_tibble() %>%
   mutate(
     Triad = ccao::town_get_triad(target_township_code, name = TRUE),
     target_township_code = ccao::town_convert(target_township_code)
@@ -861,512 +850,12 @@ merged_no_flags %>%
 
 merged_no_flags %>%
   filter(comp_num <= keep_top_n_comps) %>%
-  gen_agg_stats("target_class", keep_top_n_comps) %>%
+  gen_agg_stats(
+    group_cols = c("target_class", "description"),
+    n = keep_top_n_comps
+  ) %>%
   rename(Class = target_class) %>%
   format_agg_stats()
-```
-
-### By Num. Comps
-
-```{r perf_num_comps, out.width = "100%"}
-#| column: screen
-
-map_dfr(1:total_n_comps, ~ {
-  merged_no_flags %>%
-    filter(comp_num <= .x) %>%
-    gen_agg_stats(NULL, .x) %>%
-    mutate(`Num. Comps` = .x) %>%
-    select(`Num. Comps`, everything())
-}) %>%
-  format_agg_stats()
-```
-
-:::
-
-## Stats by Number of Comps by Township
-
-```{r n_comps_data_prep, out.width = "100%"}
-n_comps_agg <- function(x, grp) {
-  merged_no_flags %>%
-    filter(comp_num <= x) %>%
-    gen_agg_stats(grp, x) %>%
-    mutate(n_comps = x) %>%
-    select(n_comps, everything()) %>%
-    mutate(
-      ratio = wt_med_comp_sale_price / med_target_sale_price,
-      across(ends_with("dist_ft"), ~ round(as.numeric(.x), 2)),
-      across(ends_with("_sd"), ~ round(as.numeric(.x), 3))
-    )
-}
-
-n_comps_by_town_agg <- map_dfr(1:total_n_comps, ~ n_comps_agg(.x, "target_township_code")) %>%
-  mutate(target_township_name = ccao::town_convert(target_township_code))
-n_comps_by_class_agg <- map_dfr(1:total_n_comps, ~ n_comps_agg(.x, "target_class")) %>%
-  filter(!target_class %in% c("218", "219"))
-```
-
-::: {.panel-tabset}
-
-### Corr. with Target Sale
-
-```{r n_comps_town_corr_targ, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "corr_comp_target_sale",
-  "target_township_name",
-  "Correlation with Target Sale Price",
-  "Township"
-)
-```
-
-### Corr. with Estimated FMV
-
-```{r n_comps_town_corr_pred, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "corr_comp_pin_pred",
-  "target_township_name",
-  "Correlation with Estimated FMV",
-  "Township"
-)
-```
-
-### Ratio of Comps Sales to Target
-
-```{r n_comps_town_ratio, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "ratio",
-  "target_township_name",
-  "Ratio of Med. Comp Sale Price to Med. Target Sale Price",
-  "Township"
-)
-```
-
-### Median Comp Distance
-
-```{r n_comps_town_med_dist, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "med_comp_dist_ft",
-  "target_township_name",
-  "Median Comp Distance (ft)",
-  "Township"
-)
-```
-
-### Average Comp Distance
-
-```{r n_comps_town_avg_dist, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "avg_comp_dist_ft",
-  "target_township_name",
-  "Mean Comp Distance (ft)",
-  "Township"
-)
-```
-
-### Median Comp Yrblt. Distance (S.D.)
-
-```{r n_comps_town_med_dist_yrblt, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "med_comp_dist_yrblt_sd",
-  "target_township_name",
-  "Median Comp Yrblt. Distance (S.D.)",
-  "Township"
-)
-```
-
-### Average Comp Yrblt. Distance (S.D.)
-
-```{r n_comps_town_avg_dist_yrblt, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "avg_comp_dist_yrblt_sd",
-  "target_township_name",
-  "Average Comp Yrblt. Distance (S.D.)",
-  "Township"
-)
-```
-
-### Median Comp Log Bldg. S.F. Distance (S.D.)
-
-```{r n_comps_town_med_dist_bldg_sf, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "med_comp_dist_bldg_sf_sd",
-  "target_township_name",
-  "Median Comp Log Bldg. S.F. Distance (S.D.)",
-  "Township"
-)
-```
-
-### Average Comp Log Bldg. S.F. Distance (S.D.)
-
-```{r n_comps_town_avg_dist_bldg_sf, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "avg_comp_dist_bldg_sf_sd",
-  "target_township_name",
-  "Average Comp Log Bldg. S.F. Distance (S.D.)",
-  "Township"
-)
-```
-
-### Median Comp Log Land S.F. Distance (S.D.)
-
-```{r n_comps_town_med_dist_land_sf, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "med_comp_dist_land_sf_sd",
-  "target_township_name",
-  "Median Comp Log Land S.F. Distance (S.D.)",
-  "Township"
-)
-```
-
-### Average Comp Log Land S.F. Distance (S.D.)
-
-```{r n_comps_town_avg_dist_land_sf, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "avg_comp_dist_land_sf_sd",
-  "target_township_name",
-  "Average Comp Log Land S.F. Distance (S.D.)",
-  "Township"
-)
-```
-
-### Median Comp Beds Distance (S.D.)
-
-```{r n_comps_town_med_dist_beds, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "med_comp_dist_beds_sd",
-  "target_township_name",
-  "Median Comp Beds Distance (S.D.)",
-  "Township"
-)
-```
-
-### Average Comp Beds Distance (S.D.)
-
-```{r n_comps_town_avg_dist_beds, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "avg_comp_dist_beds_sd",
-  "target_township_name",
-  "Average Comp Beds Distance (S.D.)",
-  "Township"
-)
-```
-
-### Median Comp Full Bath Distance (S.D.)
-
-```{r n_comps_town_med_dist_fbath, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "med_comp_dist_fbath_sd",
-  "target_township_name",
-  "Median Comp Full Bath Distance (S.D.)",
-  "Township"
-)
-```
-
-### Average Comp Full Bath Distance (S.D.)
-
-```{r n_comps_town_avg_dist_fbath, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "avg_comp_dist_fbath_sd",
-  "target_township_name",
-  "Average Comp Full Bath Distance (S.D.)",
-  "Township"
-)
-```
-
-### Median Comp Half Bath Distance (S.D.)
-
-```{r n_comps_town_med_dist_hbath, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "med_comp_dist_hbath_sd",
-  "target_township_name",
-  "Median Comp Half Bath Distance (S.D.)",
-  "Township"
-)
-```
-
-### Average Comp Half Bath Distance (S.D.)
-
-```{r n_comps_town_avg_dist_hbath, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "avg_comp_dist_hbath_sd",
-  "target_township_name",
-  "Average Comp Half Bath Distance (S.D.)",
-  "Township"
-)
-```
-
-### Comp Score
-
-```{r n_comps_town_score, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "med_comp_score",
-  "target_township_name",
-  "Median Comp Score",
-  "Township"
-)
-```
-
-### Wtd. Med. Sale Date
-
-```{r n_comps_town_date, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_town_agg,
-  "wt_med_comp_sale_date",
-  "target_township_name",
-  "Weighted Median Comp Sale Date",
-  "Township"
-)
-```
-
-:::
-
-## Stats by Number of Comps by Class
-
-::: {.panel-tabset}
-
-### Corr. with Target Sale
-
-```{r n_comps_class_corr_targ, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "corr_comp_target_sale",
-  "target_class",
-  "Correlation with Target Sale Price",
-  "Class"
-)
-```
-
-### Corr. with Estimated FMV
-
-```{r n_comps_class_corr_pred, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "corr_comp_pin_pred",
-  "target_class",
-  "Correlation with Estimated FMV",
-  "Class"
-)
-```
-
-### Ratio of Comps Sales to Target
-
-```{r n_comps_class_ratio, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "ratio",
-  "target_class",
-  "Ratio of Med. Comp Sale Price to Med. Target Sale Price",
-  "Class"
-)
-```
-
-### Median Comp Distance
-
-```{r n_comps_class_med_dist, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "med_comp_dist_ft",
-  "target_class",
-  "Median Comp Distance (ft)",
-  "Class"
-)
-```
-
-### Average Comp Distance
-
-```{r n_comps_class_avg_dist, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "avg_comp_dist_ft",
-  "target_class",
-  "Mean Comp Distance (ft)",
-  "Class"
-)
-```
-
-### Median Comp Yrblt. Distance (S.D.)
-
-```{r n_comps_class_med_dist_yrblt, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "med_comp_dist_yrblt_sd",
-  "target_class",
-  "Median Comp Yrblt. Distance (S.D.)",
-  "Class"
-)
-```
-
-### Average Comp Yrblt. Distance (S.D.)
-
-```{r n_comps_class_avg_dist_yrblt, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "avg_comp_dist_yrblt_sd",
-  "target_class",
-  "Average Comp Yrblt. Distance (S.D.)",
-  "Class"
-)
-```
-
-### Median Comp Log Bldg. S.F. Distance (S.D.)
-
-```{r n_comps_class_med_dist_bldg_sf, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "med_comp_dist_bldg_sf_sd",
-  "target_class",
-  "Median Comp Log Bldg. S.F. Distance (S.D.)",
-  "Class"
-)
-```
-
-### Average Comp Log Bldg. S.F. Distance (S.D.)
-
-```{r n_comps_class_avg_dist_bldg_sf, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "avg_comp_dist_bldg_sf_sd",
-  "target_class",
-  "Average Comp Log Bldg. S.F. Distance (S.D.)",
-  "Class"
-)
-```
-
-### Median Comp Log Land S.F. Distance (S.D.)
-
-```{r n_comps_class_med_dist_land_sf, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "med_comp_dist_land_sf_sd",
-  "target_class",
-  "Median Comp Log Land S.F. Distance (S.D.)",
-  "Class"
-)
-```
-
-### Average Comp Log Land S.F. Distance (S.D.)
-
-```{r n_comps_class_avg_dist_land_sf, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "avg_comp_dist_land_sf_sd",
-  "target_class",
-  "Average Comp Log Land S.F. Distance (S.D.)",
-  "Class"
-)
-```
-
-### Median Comp Beds Distance (S.D.)
-
-```{r n_comps_class_med_dist_beds, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "med_comp_dist_beds_sd",
-  "target_class",
-  "Median Comp Beds Distance (S.D.)",
-  "Class"
-)
-```
-
-### Average Comp Beds Distance (S.D.)
-
-```{r n_comps_class_avg_dist_beds, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "avg_comp_dist_beds_sd",
-  "target_class",
-  "Average Comp Beds Distance (S.D.)",
-  "Class"
-)
-```
-
-### Median Comp Full Bath Distance (S.D.)
-
-```{r n_comps_class_med_dist_fbath, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "med_comp_dist_fbath_sd",
-  "target_class",
-  "Median Comp Full Bath Distance (S.D.)",
-  "Class"
-)
-```
-
-### Average Comp Full Bath Distance (S.D.)
-
-```{r n_comps_class_avg_dist_fbath, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "avg_comp_dist_fbath_sd",
-  "target_class",
-  "Average Comp Full Bath Distance (S.D.)",
-  "Class"
-)
-```
-
-### Median Comp Half Bath Distance (S.D.)
-
-```{r n_comps_class_med_dist_hbath, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "med_comp_dist_hbath_sd",
-  "target_class",
-  "Median Comp Half Bath Distance (S.D.)",
-  "Class"
-)
-```
-
-### Average Comp Half Bath Distance (S.D.)
-
-```{r n_comps_class_avg_dist_hbath, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "avg_comp_dist_hbath_sd",
-  "target_class",
-  "Average Comp Half Bath Distance (S.D.)",
-  "Class"
-)
-```
-
-### Comp Score
-
-```{r n_comps_class_score, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "med_comp_score",
-  "target_class",
-  "Median Comp Score",
-  "Class"
-)
-```
-
-### Wtd. Med. Sale Date
-
-```{r n_comps_class_date, out.width = "100%"}
-plot_n_comps_by_grp(
-  n_comps_by_class_agg,
-  "wt_med_comp_sale_date",
-  "target_class",
-  "Weighted Median Comp Sale Date",
-  "Class"
-)
 ```
 
 :::
@@ -1377,124 +866,112 @@ plot_n_comps_by_grp(
 # of the target PIN
 comps_by_pin_sales_agg <- merged_no_flags[
   comp_num <= keep_top_n_comps & !is.na(target_sale_price),
-][, .(
-  pred_pin_final_fmv = data.table::first(pred_pin_final_fmv),
-  target_sale_price = data.table::first(target_sale_price),
-  avg_comp_score = mean(comp_score, na.rm = TRUE),
-  wt_avg_comp_sale_price = weighted.mean(
-    comp_sale_price, comp_score,
-    na.rm = TRUE
+][
+  , .(
+    pred_pin_final_fmv = data.table::first(pred_pin_final_fmv),
+    target_sale_price = data.table::first(target_sale_price),
+    avg_comp_score = mean(comp_score, na.rm = TRUE),
+    avg_comp_sale_price = mean(comp_sale_price, na.rm = TRUE),
+    med_comp_dist_ft = targ_to_comp_dist_ft %>%
+      as.vector() %>%
+      median(na.rm = TRUE),
+    avg_comp_dist_ft = targ_to_comp_dist_ft %>%
+      as.vector() %>%
+      mean(na.rm = TRUE),
+    target_char_yrblt = data.table::first(target_char_yrblt),
+    avg_comp_char_yrblt = mean(comp_char_yrblt, na.rm = TRUE),
+    target_char_bldg_sf = data.table::first(target_char_bldg_sf),
+    avg_comp_char_bldg_sf = mean(comp_char_bldg_sf, na.rm = TRUE),
+    target_char_land_sf = data.table::first(target_char_land_sf),
+    avg_comp_char_land_sf = mean(comp_char_land_sf, na.rm = TRUE),
+    description = data.table::first(description)
   ),
-  med_comp_dist_ft = targ_to_comp_dist_ft %>%
-    as.vector() %>%
-    median(na.rm = TRUE),
-  wt_avg_comp_dist_ft = targ_to_comp_dist_ft %>%
-    as.vector() %>%
-    weighted.mean(comp_score, na.rm = TRUE),
-  target_char_yrblt = data.table::first(target_char_yrblt),
-  wt_avg_comp_char_yrblt = weighted.mean(
-    comp_char_yrblt, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_bldg_sf = data.table::first(target_char_bldg_sf),
-  wt_avg_comp_char_bldg_sf = weighted.mean(
-    comp_char_bldg_sf, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_land_sf = data.table::first(target_char_land_sf),
-  wt_avg_comp_char_land_sf = weighted.mean(
-    comp_char_land_sf, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_beds = data.table::first(target_char_beds),
-  wt_avg_comp_char_beds = weighted.mean(
-    comp_char_beds, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_fbath = data.table::first(target_char_fbath),
-  wt_avg_comp_char_fbath = weighted.mean(
-    comp_char_fbath, comp_score,
-    na.rm = TRUE
-  ),
-  target_char_hbath = data.table::first(target_char_hbath),
-  wt_avg_comp_char_hbath = weighted.mean(
-    comp_char_hbath, comp_score,
-    na.rm = TRUE
-  )
-), by = c("target_pin", "target_township_code", "target_class")][
+  by = c("run_id", "target_pin", "target_township_code", "target_class")
+][
   , target_township_name := ccao::town_convert(target_township_code)
 ]
 
+
 # Take a sample of target properties with sales to plot using plotly. Sample
 # because using all properties makes the plots too large to render
-comps_by_pin_sales_agg_sample <- comps_by_pin_sales_agg[sample(.N, 10000)]
+# Select the same sample for all runs
+sample_pins <- comps_by_pin_sales_agg %>%
+  distinct(target_pin) %>%
+  sample_n(2000)
+
+comps_by_pin_sales_agg_sample <- comps_by_pin_sales_agg %>%
+  semi_join(sample_pins, by = "target_pin")
 ```
 
 ## Target Characteristic vs Weighted Average Comp Characteristic
 
-*The plots below use a sample of 10,000 individual target properties with sales*
+*The plots below use a sample of 2000 individual target properties with sales (per run)*
 
-::: {.panel-tabset}
 
 ### Sale Price By Township
 
-```{r plot_targ_sale_v_avg_comp_town, out.width = "100%"}
+```{r plot_targ_sale_v_avg_comp_town, results="asis", out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "target_sale_price",
-  "wt_avg_comp_sale_price",
+  "avg_comp_sale_price",
   "target_township_name",
   "Target Sale Price",
-  "Wtd. Avg. Comp Sale Price",
-  "Township"
+  "Avg. Comp Sale Price",
+  "Township",
+  id_prefix = "sale_price_township"
 )
 ```
 
 ### Sale Price By Class
 
-```{r plot_targ_sale_v_avg_comp_class, out.width = "100%"}
+```{r plot_targ_sale_v_avg_comp_class, results="asis", out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "target_sale_price",
-  "wt_avg_comp_sale_price",
+  "avg_comp_sale_price",
   "target_class",
   "Target Sale Price",
-  "Wtd. Avg. Comp Sale Price",
-  "Class"
+  "Avg. Comp Sale Price",
+  "Class",
+  id_prefix = "sale_price_class"
 )
 ```
 
 ### Prediction By Township
 
-```{r plot_pred_v_avg_comp_town, out.width = "100%"}
+```{r plot_pred_v_avg_comp_town, results="asis", out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
-  "wt_avg_comp_sale_price",
+  "avg_comp_sale_price",
   "target_township_name",
   "Model Estimated FMV",
-  "Wtd. Avg. Comp Sale Price",
-  "Township"
+  "Avg. Comp Sale Price",
+  "Township",
+  id_prefix = "pred_price_township"
 )
 ```
 
 ### Prediction By Class
 
-```{r plot_pred_v_avg_comp_class, out.width = "100%"}
+```{r plot_pred_v_avg_comp_class, results="asis", out.width = "100%"}
 plot_ind_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
-  "wt_avg_comp_sale_price",
+  "avg_comp_sale_price",
   "target_class",
   "Model Estimated FMV",
-  "Wtd. Avg. Comp Sale Price",
-  "Class"
+  "Avg. Comp Sale Price",
+  "Class",
+  id_prefix = "pred_price_class"
 )
 ```
 
+
 ### Median Distance By Township
 
-```{r plot_median_dist_sf_town, out.width = "100%"}
+```{r plot_median_dist_sf_town, results="asis", out.width = "100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
@@ -1504,13 +981,14 @@ plot_ind_char_obs(
   "Median Comp Distance (ft)",
   "Township",
   slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
+  id_prefix = "median_dist_township"
 )
 ```
 
 ### Median Distance By Class
 
-```{r plot_median_dist_sf_class, out.width = "100%"}
+```{r plot_median_dist_sf_class, results="asis", out.width = "100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
@@ -1520,398 +998,136 @@ plot_ind_char_obs(
   "Median Comp Distance (ft)",
   "Class",
   slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
+  id_prefix = "median_dist_class"
 )
 ```
 
+
 ### Average Distance By Township
 
-```{r plot_avg_dist_sf_town, out.width = "100%"}
+```{r plot_avg_dist_sf_town, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
-  "wt_avg_comp_dist_ft",
+  "avg_comp_dist_ft",
   "target_township_name",
   "Model Estimated FMV",
-  "Wt. Avg. Comp Distance (ft)",
+  "Avg. Comp Distance (ft)",
   "Township",
   slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
+  id_prefix = "avg_dist_township"
 )
 ```
 
 ### Average Distance By Class
 
-```{r plot_avg_dist_sf_class, out.width = "100%"}
+```{r plot_avg_dist_sf_class, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "pred_pin_final_fmv",
-  "wt_avg_comp_dist_ft",
+  "avg_comp_dist_ft",
   "target_class",
   "Model Estimated FMV",
-  "Wt. Avg. Comp Distance (ft)",
+  "Avg. Comp Distance (ft)",
   "Class",
   slope = 0,
-  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K")
+  labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
+  id_prefix = "avg_dist_class"
 )
 ```
+
 
 ### Yrblt. By Township
 
-```{r plot_yrblt_v_avg_comp_town, out.width = "100%"}
+```{r plot_yrblt_v_avg_comp_town, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_yrblt",
-  "wt_avg_comp_char_yrblt",
+  "avg_comp_char_yrblt",
   "target_township_name",
   "Target Yrblt.",
-  "Wtd. Avg. Comp Yrblt.",
-  "Township"
+  "Avg. Comp Yrblt.",
+  "Township",
+  id_prefix = "yrblt_township"
 )
 ```
 
+
 ### Yrblt. By Class
 
-```{r plot_yrblt_v_avg_comp_class, out.width = "100%"}
+```{r plot_yrblt_v_avg_comp_class, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_yrblt",
-  "wt_avg_comp_char_yrblt",
+  "avg_comp_char_yrblt",
   "target_class",
   "Target Yrblt.",
-  "Wtd. Avg. Comp Yrblt.",
-  "Class"
+  "Avg. Comp Yrblt.",
+  "Class",
+  id_prefix = "yrblt_class"
 )
 ```
 
 ### Bldg. S.F. By Township
 
-```{r plot_bldg_sf_v_avg_comp_town, out.width = "100%"}
+```{r plot_bldg_sf_v_avg_comp_town, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_bldg_sf",
-  "wt_avg_comp_char_bldg_sf",
+  "avg_comp_char_bldg_sf",
   "target_township_name",
   "Target Bldg. S.F.",
-  "Wtd. Avg. Comp Bldg. S.F.",
-  "Township"
+  "Avg. Comp Bldg. S.F.",
+  "Township",
+  id_prefix = "bldg_sf_township"
 )
 ```
 
 ### Bldg. S.F. By Class
 
-```{r plot_bldg_sf_v_avg_comp_class, out.width = "100%"}
+```{r plot_bldg_sf_v_avg_comp_class, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_bldg_sf",
-  "wt_avg_comp_char_bldg_sf",
+  "avg_comp_char_bldg_sf",
   "target_class",
   "Target Bldg. S.F.",
-  "Wtd. Avg. Comp Bldg. S.F.",
-  "Class"
+  "Avg. Comp Bldg. S.F.",
+  "Class",
+  id_prefix = "bldg_sf_class"
 )
 ```
+
 
 ### Land S.F. By Township
 
-```{r plot_land_sf_v_avg_comp_town, out.width = "100%"}
+```{r plot_land_sf_v_avg_comp_town, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_land_sf",
-  "wt_avg_comp_char_land_sf",
+  "avg_comp_char_land_sf",
   "target_township_name",
   "Target Land S.F.",
-  "Wtd. Avg. Comp Land S.F.",
-  "Township"
+  "Avg. Comp Land S.F.",
+  "Township",
+  id_prefix = "land_sf_township"
 )
 ```
+
 
 ### Land S.F. By Class
 
-```{r plot_land_sf_v_avg_comp_class, out.width = "100%"}
+```{r plot_land_sf_v_avg_comp_class, results="asis", out.width="100%"}
 plot_ind_char_obs(
   comps_by_pin_sales_agg_sample,
   "target_char_land_sf",
-  "wt_avg_comp_char_land_sf",
+  "avg_comp_char_land_sf",
   "target_class",
   "Target Land S.F.",
-  "Wtd. Avg. Comp Land S.F.",
-  "Class"
+  "Avg. Comp Land S.F.",
+  "Class",
+  id_prefix = "land_sf_class"
 )
 ```
-
-### Beds By Township
-
-```{r plot_beds_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_beds",
-  "wt_avg_comp_char_beds",
-  "target_township_name",
-  "Target Beds",
-  "Wtd. Avg. Comp Beds",
-  "Township"
-)
-```
-
-### Beds By Class
-
-```{r plot_beds_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_beds",
-  "wt_avg_comp_char_beds",
-  "target_class",
-  "Target Beds",
-  "Wtd. Avg. Comp Beds",
-  "Class"
-)
-```
-
-### Full Baths By Township
-
-```{r plot_fbath_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_fbath",
-  "wt_avg_comp_char_fbath",
-  "target_township_name",
-  "Target Full Baths",
-  "Wtd. Avg. Comp Full Baths",
-  "Township"
-)
-```
-
-### Full Baths By Class
-
-```{r plot_fbath_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_fbath",
-  "wt_avg_comp_char_fbath",
-  "target_class",
-  "Target Full Baths",
-  "Wtd. Avg. Comp Full Baths",
-  "Class"
-)
-```
-
-### Half Baths By Township
-
-```{r plot_hbath_v_avg_comp_town, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_hbath",
-  "wt_avg_comp_char_hbath",
-  "target_township_name",
-  "Target Half Baths",
-  "Wtd. Avg. Comp Half Baths",
-  "Township"
-)
-```
-
-### Half Baths By Class
-
-```{r plot_hbath_v_avg_comp_class, out.width = "100%"}
-plot_ind_char_obs(
-  comps_by_pin_sales_agg_sample,
-  "target_char_hbath",
-  "wt_avg_comp_char_hbath",
-  "target_class",
-  "Target Half Baths",
-  "Wtd. Avg. Comp Half Baths",
-  "Class"
-)
-```
-
-:::
-
-## Comparing Smartfile comps to model comps
-
-When property owners appeal an assessment on the grounds of uniformity, they
-have the option to select comps from a grid in Smartfile as evidence for their
-appeal. The following section compares our model comps to these Smartfile comps
-to determine the degree to which they match.
-
-### Caveats
-
-It's important to note that our Smartfile comps sample is limited to 2024
-appeals in Jefferson township, which may not be representative of appeal comps
-across townships and years.
-
-In addition to the limited Smartfile sample, there are two important differences
-between Smartfile comps and model comps that inform our comparison:
-
-1. Smartfile comps must be the same class as the subject property, while model
-   comps are unconstrained by class
-2. Smartfile comps do not have to have sold recently in order for an appellant
-   to submit them, since appellants select these comps for the purpose of
-   demonstrating a lack of assessment uniformity rather than overvaluation
-
-To handle difference #1, we avoid comparing comps by class, since we know that
-Smartfile comps will always be a better class match by definition. To handle
-difference #2, we filter Smartfile comps for only those properties that have
-sold recently, so that the comps in our analysis all come from the same
-universe of properties.
-
-Filtering Smartfile comps for recent sales does not make our analysis a true
-apples-to-apples comparison, since appellants choose comps for a different
-purpose (uniformity) than our model does. Still, we believe that the comparison
-between these two sets of comps for sold properties still contains valuable
-information in that it can provide a rough indication as to how closely
-the model's comps match the a property owner's intuition about which other
-properties are most similar to the property they own.
-
-## Overall matches
-
-This table displays the overall match percentage between model comps and
-Smartfile comps with recent sales. Note that the match percentage is quite low.
-
-::: panel-tabset
-
-### Overall
-
-```{r comp_comp_matches_overall, out.width = "100%"}
-merged_smartfile_comps %>%
-  filter(source == "smartfile") %>%
-  distinct(target_pin, .keep_all = TRUE) %>%
-  summarise(
-    N = n(),
-    `% Matches` = scales::percent(
-      sum(tot_match_count, na.rm = TRUE) / N,
-      accuracy = 0.01
-    )
-  ) %>%
-  datatable(
-    options = list(
-      dom = "t",
-      paging = FALSE,
-      ordering = FALSE
-    )
-  )
-```
-
-### By Class
-
-```{r comp_comp_matches_by_class, out.width = "100%"}
-merged_smartfile_comps %>%
-  filter(source == "smartfile") %>%
-  distinct(target_pin, .keep_all = TRUE) %>%
-  group_by(target_class) %>%
-  summarise(
-    N = n(),
-    `% Matches` = scales::percent(
-      sum(tot_match_count, na.rm = TRUE) / N,
-      accuracy = 0.01
-    )
-  ) %>%
-  datatable(
-    options = list(
-      dom = "t",
-      paging = FALSE,
-      ordering = FALSE
-    )
-  )
-```
-:::
-
-## Characteristic differences
-
-This table displays the average differences between all subject properties
-and their comps on the basis of characteristic. We weight averages for
-model comps by comp scores.
-
-```{r comp_comp_char_diff}
-merged_smartfile_comps %>%
-  rename(Source = source) %>%
-  group_by(target_pin, Source) %>%
-  summarise(
-    Count = n(),
-    `Year Built Match` = scales::percent(sum(comp_char_yrblt == target_char_yrblt, na.rm = TRUE) / Count, accuracy = 1),
-    `Avg. Year Built Diff.` = round(weighted.mean(abs(comp_char_yrblt - target_char_yrblt), comp_score, na.rm = TRUE), 2),
-    `SF Match` = scales::percent(sum(comp_char_bldg_sf == target_char_bldg_sf, na.rm = TRUE) / Count, accuracy = 1),
-    `Avg. SF Diff.` = round(weighted.mean(abs(comp_char_bldg_sf - target_char_bldg_sf), comp_score, na.rm = TRUE), 2),
-    `Beds Match` = scales::percent(sum(comp_char_beds == target_char_beds, na.rm = TRUE) / Count, accuracy = 1),
-    `Avg. Beds Diff.` = round(weighted.mean(abs(comp_char_beds - target_char_beds), comp_score, na.rm = TRUE), 2),
-    `Land SF Match` = scales::percent(sum(comp_char_land_sf == target_char_land_sf, na.rm = TRUE) / Count, accuracy = 1),
-    `Avg. Land SF Diff.` = round(weighted.mean(abs(comp_char_land_sf - target_char_land_sf), comp_score, na.rm = TRUE), 2),
-    `Avg. Distance (Feet)` = round(weighted.mean(targ_to_comp_dist_ft, comp_score, na.rm = TRUE), 2),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    `Year Built Match` = as.numeric(gsub("%", "", `Year Built Match`)),
-    `SF Match` = as.numeric(gsub("%", "", `SF Match`)),
-    `Beds Match` = as.numeric(gsub("%", "", `Beds Match`)),
-    `Land SF Match` = as.numeric(gsub("%", "", `Land SF Match`))
-  ) %>%
-  group_by(Source) %>%
-  summarise(
-    Count = scales::comma(sum(Count)),
-    `Year Built Match` = scales::percent(mean(`Year Built Match` / 100, na.rm = TRUE), accuracy = 1),
-    `Avg. Year Built Diff.` = round(mean(abs(`Avg. Year Built Diff.`), na.rm = TRUE), 2),
-    `SF Match` = scales::percent(mean(`SF Match` / 100, na.rm = TRUE), accuracy = 1),
-    `Avg. SF Diff.` = round(mean(abs(`Avg. SF Diff.`), na.rm = TRUE), 2),
-    `Beds Match` = scales::percent(mean(`Beds Match` / 100, na.rm = TRUE), accuracy = 1),
-    `Avg. Beds Diff.` = round(mean(abs(`Avg. Beds Diff.`), na.rm = TRUE), 2),
-    `Land SF Match` = scales::percent(mean(`Land SF Match` / 100, na.rm = TRUE), accuracy = 1),
-    `Avg. Land SF Diff.` = round(mean(abs(`Avg. Land SF Diff.`), na.rm = TRUE), 2),
-    `Avg. Distance (Feet)` = round(mean(`Avg. Distance (Feet)`, na.rm = TRUE), 2)
-  ) %>%
-  datatable(
-    rownames = FALSE,
-    options = list(
-      pageLength = 10,
-      scrollX = TRUE
-    )
-  )
-```
-
-## Conclusion
-
-Based on the figures above, the comparable sales created by the CCAO's algorithm
-seem to meet at least three of the criteria specified at the start of the
-document. They are:
-
-- Accurate, at least to the extent that the model and training data are
-  accurate. Comp sale prices are highly correlated with the target sale price
-  (where available) and estimated market value (for all modeled properties).
-- Well-behaved. There are no unexpected patterns of behavior: more
-  highly-ranked comps are closer to the target property, more recent, and more
-  correlated with the target sale price.
-- Consistent *within* groups, though not always across them (though this is
-  somewhat expected, as different areas have different geographies, sale trends,
-  etc.).
-
-While our analysis indicates that these comps do not generally match the set of
-sales that appellants in Jefferson township selected for uniformity comps in
-2024, our analysis _does_ show that the characteristics for our comps are
-roughly similar to the characteristics of the comps that appellants selected
-in Smartfile. Our comps tend to be more similar to the subject property in
-size, whereas Smartfile comps tended to be more similar to the subject property
-in age and location.
-
-However, there are some areas that need further investigation/work:
-
-- Whether or not the comps are intuitive/conform to expectations can't really be
-  answered by this document, which is focused on the behavior of the comps
-  *in aggregate*. We need to do some qualitative analysis/user testing
-  to determine if the comps are worthwhile at the individual property level.
-- The optimal number of comps to return/use is an open question. It does seem
-  like "comp quality" decreases as the number of comps increases. We should
-  try to determine the optimal number and then return only that number in the
-  algorithm (which would decrease its runtime).
-- Comp score varies significantly by township and class. The score is
-  consistently lower for groups with higher property values, suggesting
-  a deficiency of algorithm itself. Insofar as the comp score is used as a
-  measure of comp quality, we should work to make it globally consistent.
-- Comps are sometimes far away from the subject property, to a degree that
-  would be unacceptable to an appraiser. This phenomenon is most prominent
-  on the south and west sides of the City, and among multifamily buildings and
-  townhomes. This may reflect a real effect in the model that produces better
-  estimates, but it does not follow standard appraisal practices, so it has the
-  potential to confuse anyone who consumes our comps.
-- The fact that Smartfile comps outperform our comps on age and location may be
-  another indication that our comps do not match the public's intuition about
-  what factors to prioritize when comparing properties.
-
-
