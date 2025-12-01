@@ -917,7 +917,7 @@ plot_ind_obs(
   "target_township_name",
   "Target Sale Price",
   "Avg. Comp Sale Price",
-  "Township",
+  "target_township_name",
   id_prefix = "sale_price_township"
 )
 ```
@@ -932,7 +932,7 @@ plot_ind_obs(
   "target_class",
   "Target Sale Price",
   "Avg. Comp Sale Price",
-  "Class",
+  "target_class",
   id_prefix = "sale_price_class"
 )
 ```
@@ -947,7 +947,7 @@ plot_ind_obs(
   "target_township_name",
   "Model Estimated FMV",
   "Avg. Comp Sale Price",
-  "Township",
+  "target_township_name",
   id_prefix = "pred_price_township"
 )
 ```
@@ -962,7 +962,7 @@ plot_ind_obs(
   "target_class",
   "Model Estimated FMV",
   "Avg. Comp Sale Price",
-  "Class",
+  "target_class",
   id_prefix = "pred_price_class"
 )
 ```
@@ -978,7 +978,7 @@ plot_ind_char_obs(
   "target_township_name",
   "Model Estimated FMV",
   "Median Comp Distance (ft)",
-  "Township",
+  "target_township_name",
   slope = 0,
   labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
   id_prefix = "median_dist_township"
@@ -995,7 +995,7 @@ plot_ind_char_obs(
   "target_class",
   "Model Estimated FMV",
   "Median Comp Distance (ft)",
-  "Class",
+  "target_class",
   slope = 0,
   labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
   id_prefix = "median_dist_class"
@@ -1013,7 +1013,7 @@ plot_ind_char_obs(
   "target_township_name",
   "Model Estimated FMV",
   "Avg. Comp Distance (ft)",
-  "Township",
+  "target_township_name",
   slope = 0,
   labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
   id_prefix = "avg_dist_township"
@@ -1030,7 +1030,7 @@ plot_ind_char_obs(
   "target_class",
   "Model Estimated FMV",
   "Avg. Comp Distance (ft)",
-  "Class",
+  "target_class",
   slope = 0,
   labels = scales::label_dollar(accuracy = 1, scale = 1 / 1000, suffix = "K"),
   id_prefix = "avg_dist_class"
@@ -1048,7 +1048,7 @@ plot_ind_char_obs(
   "target_township_name",
   "Target Yrblt.",
   "Avg. Comp Yrblt.",
-  "Township",
+  "target_township_name",
   id_prefix = "yrblt_township"
 )
 ```
@@ -1064,7 +1064,7 @@ plot_ind_char_obs(
   "target_class",
   "Target Yrblt.",
   "Avg. Comp Yrblt.",
-  "Class",
+  "target_class",
   id_prefix = "yrblt_class"
 )
 ```
@@ -1079,7 +1079,7 @@ plot_ind_char_obs(
   "target_township_name",
   "Target Bldg. S.F.",
   "Avg. Comp Bldg. S.F.",
-  "Township",
+  "target_township_name",
   id_prefix = "bldg_sf_township"
 )
 ```
@@ -1094,7 +1094,7 @@ plot_ind_char_obs(
   "target_class",
   "Target Bldg. S.F.",
   "Avg. Comp Bldg. S.F.",
-  "Class",
+  "target_class",
   id_prefix = "bldg_sf_class"
 )
 ```
@@ -1110,7 +1110,7 @@ plot_ind_char_obs(
   "target_township_name",
   "Target Land S.F.",
   "Avg. Comp Land S.F.",
-  "Township",
+  "target_township_name",
   id_prefix = "land_sf_township"
 )
 ```
@@ -1126,7 +1126,7 @@ plot_ind_char_obs(
   "target_class",
   "Target Land S.F.",
   "Avg. Comp Land S.F.",
-  "Class",
+  "target_class",
   id_prefix = "land_sf_class"
 )
 ```
