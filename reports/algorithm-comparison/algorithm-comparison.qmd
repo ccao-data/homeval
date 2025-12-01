@@ -66,8 +66,6 @@ triad <- dplyr::case_when(
 s3_bucket <- "s3://ccao-model-results-us-east-1"
 run_ids <- params$run_id
 
-s3_bucket <- "s3://ccao-model-results-us-east-1"
-
 run_tbl <- tibble::tibble(
   run_id = params$run_id,
   description = params$description
