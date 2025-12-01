@@ -903,7 +903,7 @@ comps_by_pin_sales_agg_sample <- comps_by_pin_sales_agg %>%
   semi_join(sample_pins, by = "target_pin")
 ```
 
-## Target Characteristic vs Weighted Average Comp Characteristic
+## Target Characteristic vs Average Comp Characteristic
 
 *The plots below use a sample of 2000 individual target properties with sales (per run)*
 
