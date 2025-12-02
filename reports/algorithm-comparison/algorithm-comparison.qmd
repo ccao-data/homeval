@@ -1,5 +1,5 @@
 ---
-title: "Algorithm-Comparison"
+title: "Comps Algorithm Comparison"
 format: html
 execute:
   echo: false
@@ -7,14 +7,14 @@ execute:
   message: false
 params:
   year: 2025
-  # descriptions and run_ids must be ordered correspondingly
+  # Algorithms and run_ids must be ordered correspondingly
   run_id:
     - "2025-10-18-blissful-sean"
     - "2025-06-14-flamboyant-rob"
     - "2025-04-25-fancy-free-billy"
-    - "2025-03-26-vibrant-bowen"
+    - "2025-02-11-charming-eric"
     - "2025-09-20-fervent-bowen"
-  description:
+  Algorithm:
     - "Unweighted"
     - "Unweighted (error-reducing trees only)"
     - "Error reduction"
@@ -28,7 +28,7 @@ params:
     # - "2025-09-07-adoring-jean"
     # - "2025-08-28-mystifying-kyra"
     # - "2024-06-18-calm-nathan"
-    # description:
+    # Algorithm:
     # - "Unweighted (error-reducing trees only)"
     # - "Error reduction"
     # - "Error reduction (semi-random)"
@@ -64,23 +64,22 @@ triad <- dplyr::case_when(
 )
 
 s3_bucket <- "s3://ccao-model-results-us-east-1"
-run_ids <- params$run_id
 
 run_tbl <- tibble::tibble(
   run_id = params$run_id,
-  description = params$description
+  Algorithm = params$Algorithm
 )
 
 data <- pmap(
-  .l = list(run_id = run_tbl$run_id, description = run_tbl$description),
-  .f = function(run_id, description) {
-    message("Processing run_id: ", run_id, " (", description, ")")
+  .l = list(run_id = run_tbl$run_id, Algorithm = run_tbl$Algorithm),
+  .f = function(run_id, Algorithm) {
+    message("Processing run_id: ", run_id, " (", Algorithm, ")")
 
     comps <- read_parquet(glue(
       "{s3_bucket}/comp/year={year}/run_id={run_id}/part-0.parquet"
     )) %>%
       mutate(
-        year = !!year, run_id = !!run_id, description = !!description,
+        year = !!year, run_id = !!run_id, Algorithm = !!Algorithm,
         .before = 1
       )
 
@@ -88,7 +87,7 @@ data <- pmap(
       "{s3_bucket}/assessment_pin/year={year}/run_id={run_id}/"
     ))) %>%
       mutate(
-        year = !!year, run_id = !!run_id, description = !!description,
+        year = !!year, run_id = !!run_id, Algorithm = !!Algorithm,
         .before = 1
       )
 
@@ -96,7 +95,7 @@ data <- pmap(
       "{s3_bucket}/assessment_card/year={year}/run_id={run_id}/"
     ))) %>%
       mutate(
-        year = !!year, run_id = !!run_id, description = !!description,
+        year = !!year, run_id = !!run_id, Algorithm = !!Algorithm,
         .before = 1
       )
 
@@ -112,7 +111,7 @@ data <- pmap(
       "s3://ccao-data-dvc-us-east-1/files/md5/{training_data_prefix}/{training_data_filename}" # nolintr
     )) %>%
       mutate(
-        year = !!year, run_id = !!run_id, description = !!description,
+        year = !!year, run_id = !!run_id, Algorithm = !!Algorithm,
         .before = 1
       )
 
@@ -279,7 +278,7 @@ card_locs <- preds_card %>%
 training_data_clean <- training_data %>%
   filter(!ind_pin_is_multicard, !sv_is_outlier) %>%
   select(
-    meta_pin, meta_card_num, run_id, description,
+    meta_pin, meta_card_num, run_id, Algorithm,
     meta_sale_document_num, meta_sale_price, meta_sale_date,
     char_yrblt, z_yrblt, agg_avg_yrblt, agg_stddev_yrblt,
     char_bldg_sf, z_bldg_sf, agg_avg_log_bldg_sf, agg_stddev_log_bldg_sf,
@@ -382,7 +381,7 @@ merged_model_comps <- comps_long %>%
     )
   ) %>%
   # Filter for only cards in the selected tri
-  filter(town_get_triad(target_township_code) == triad)
+  filter(ccao::town_get_triad(target_township_code) == triad)
 
 # Calculate the distance between the target and each comparable property/sale
 merged_w_dist <- merged_model_comps %>%
@@ -438,8 +437,23 @@ gc()
 ```
 
 ```{r helper_funcs}
-format_agg_stats <- function(df) {
-  df %>%
+format_agg_stats <- function(df,
+                             table_type = c("overall", "township", "class")) {
+  table_type <- match.arg(table_type)
+
+  freeze_cols_lookup <- list(
+    overall  = c("Overall", "Algorithm", "description"),
+    township = c("Triad", "Township", "Algorithm", "description"),
+    class    = c("Class", "Algorithm", "description")
+  )
+
+  freeze_cols <- freeze_cols_lookup[[table_type]]
+  freeze_cols <- freeze_cols[freeze_cols %in% colnames(df)]
+
+  freeze_idx <- match(freeze_cols, colnames(df))
+  freeze_idx <- freeze_idx[!is.na(freeze_idx)]
+
+  dat <- df %>%
     datatable(
       rownames = FALSE,
       filter = "none",
@@ -469,20 +483,21 @@ format_agg_stats <- function(df) {
         autoWidth = TRUE,
         paging = FALSE,
         searching = FALSE,
-        info = FALSE
+        info = FALSE,
+        scrollX = TRUE,
+        fixedColumns = list(
+          leftColumns = length(freeze_idx)
+        )
       )
     ) %>%
     formatRound(
-      c(
-        "Med. Comp. Score", "Corr. Comp. PIN Pred.",
-        "Corr. Comp. Target Sale"
-      ),
+      c("Med. Comp. Score", "Corr. Comp. PIN Pred.", "Corr. Comp. Target Sale"),
       digits = 2
     ) %>%
     formatRound(
       c(
-        "Num. Targets", "Num. Sales",
-        "Med. Comp. Dist. (ft)", "Avg. Comp. Dist. (ft)"
+        "Num. Targets", "Num. Sales", "Med. Comp. Dist. (ft)",
+        "Avg. Comp. Dist. (ft)"
       ),
       digits = 0
     ) %>%
@@ -498,13 +513,17 @@ format_agg_stats <- function(df) {
     ) %>%
     formatCurrency(
       c(
-        "Med. PIN Pred. Price", "Med. Target Sale Price",
+        "Med. PIN Pred. Price",
+        "Med. Target Sale Price",
         "Med. Comp. Sale Price"
       ),
       currency = "$",
       digits = 0
     )
+
+  return(dat)
 }
+
 
 # Function to calculate aggregate comp statistics per group and number of comps
 gen_agg_stats <- function(df, group_cols, n) {
@@ -581,11 +600,11 @@ plot_ind_obs <- function(
     slope = 1,
     id_prefix = "desc") {
   df <- df %>%
-    dplyr::mutate(description = as.character(description))
+    dplyr::mutate(Algorithm = as.character(Algorithm))
 
   desc_vals <- df %>%
-    dplyr::distinct(description) %>%
-    dplyr::pull(description)
+    dplyr::distinct(Algorithm) %>%
+    dplyr::pull(Algorithm)
 
   nav_tabs <- vector("list", length(desc_vals))
   tab_contents <- vector("list", length(desc_vals))
@@ -594,7 +613,7 @@ plot_ind_obs <- function(
     desc_val <- desc_vals[[idx]]
 
     df_desc <- df %>%
-      dplyr::filter(.data$description == desc_val)
+      dplyr::filter(.data$Algorithm == desc_val)
 
     plt <- df_desc %>%
       ggplot() +
@@ -698,11 +717,11 @@ plot_ind_char_obs <- function(
     slope = 1, labels = waiver(),
     id_prefix = "desc") {
   df <- df %>%
-    dplyr::mutate(description = as.character(description))
+    dplyr::mutate(Algorithm = as.character(Algorithm))
 
   desc_vals <- df %>%
-    dplyr::distinct(description) %>%
-    dplyr::pull(description)
+    dplyr::distinct(Algorithm) %>%
+    dplyr::pull(Algorithm)
 
   nav_tabs <- vector("list", length(desc_vals))
   tab_contents <- vector("list", length(desc_vals))
@@ -711,7 +730,7 @@ plot_ind_char_obs <- function(
     desc_val <- desc_vals[[idx]]
 
     df_desc <- df %>%
-      dplyr::filter(.data$description == desc_val)
+      dplyr::filter(.data$Algorithm == desc_val)
 
     plt <- df_desc %>%
       ggplot() +
@@ -814,10 +833,10 @@ plot_ind_char_obs <- function(
 merged_no_flags %>%
   filter(comp_num <= keep_top_n_comps) %>%
   gen_agg_stats(
-    group_cols = c("description"),
+    group_cols = c("Algorithm"),
     n = keep_top_n_comps
   ) %>%
-  format_agg_stats()
+  format_agg_stats(left_columns = 1)
 ```
 
 ### By Township
@@ -828,18 +847,18 @@ merged_no_flags %>%
 merged_no_flags %>%
   filter(comp_num <= keep_top_n_comps) %>%
   gen_agg_stats(
-    group_cols = c("target_township_code", "description"),
+    group_cols = c("target_township_code", "Algorithm"),
     n = keep_top_n_comps
   ) %>%
   as_tibble() %>%
   mutate(
-    Triad = ccao::town_get_triad(target_township_code, name = TRUE),
+    Triad = town_get_triad(target_township_code, name = TRUE),
     target_township_code = ccao::town_convert(target_township_code)
   ) %>%
   rename(Township = target_township_code) %>%
   relocate(Triad, .before = Township) %>%
   arrange(Triad, Township) %>%
-  format_agg_stats()
+  format_agg_stats(left_columns = 3)
 ```
 
 ### By Class
@@ -850,11 +869,11 @@ merged_no_flags %>%
 merged_no_flags %>%
   filter(comp_num <= keep_top_n_comps) %>%
   gen_agg_stats(
-    group_cols = c("target_class", "description"),
+    group_cols = c("target_class", "Algorithm"),
     n = keep_top_n_comps
   ) %>%
   rename(Class = target_class) %>%
-  format_agg_stats()
+  format_agg_stats(left_columns = 2)
 ```
 
 :::
@@ -883,7 +902,7 @@ comps_by_pin_sales_agg <- merged_no_flags[
     avg_comp_char_bldg_sf = mean(comp_char_bldg_sf, na.rm = TRUE),
     target_char_land_sf = data.table::first(target_char_land_sf),
     avg_comp_char_land_sf = mean(comp_char_land_sf, na.rm = TRUE),
-    description = data.table::first(description)
+    Algorithm = data.table::first(Algorithm)
   ),
   by = c("run_id", "target_pin", "target_township_code", "target_class")
 ][
