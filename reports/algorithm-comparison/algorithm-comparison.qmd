@@ -437,23 +437,8 @@ gc()
 ```
 
 ```{r helper_funcs}
-format_agg_stats <- function(df,
-                             table_type = c("overall", "township", "class")) {
-  table_type <- match.arg(table_type)
-
-  freeze_cols_lookup <- list(
-    overall  = c("Overall", "Algorithm", "description"),
-    township = c("Triad", "Township", "Algorithm", "description"),
-    class    = c("Class", "Algorithm", "description")
-  )
-
-  freeze_cols <- freeze_cols_lookup[[table_type]]
-  freeze_cols <- freeze_cols[freeze_cols %in% colnames(df)]
-
-  freeze_idx <- match(freeze_cols, colnames(df))
-  freeze_idx <- freeze_idx[!is.na(freeze_idx)]
-
-  dat <- df %>%
+format_agg_stats <- function(df, left_columns = 0) {
+  df %>%
     datatable(
       rownames = FALSE,
       filter = "none",
@@ -479,25 +464,27 @@ format_agg_stats <- function(df,
         "Med. Comp. Log Land S.F. Dist. (S.D.)" = "med_comp_dist_land_sf_sd",
         "Avg. Comp. Log Land S.F. Dist. (S.D.)" = "avg_comp_dist_land_sf_sd"
       ),
+      extensions = "FixedColumns",
       options = list(
         autoWidth = TRUE,
         paging = FALSE,
         searching = FALSE,
         info = FALSE,
         scrollX = TRUE,
-        fixedColumns = list(
-          leftColumns = length(freeze_idx)
-        )
+        fixedColumns = list(leftColumns = left_columns)
       )
     ) %>%
     formatRound(
-      c("Med. Comp. Score", "Corr. Comp. PIN Pred.", "Corr. Comp. Target Sale"),
+      c(
+        "Med. Comp. Score", "Corr. Comp. PIN Pred.",
+        "Corr. Comp. Target Sale"
+      ),
       digits = 2
     ) %>%
     formatRound(
       c(
-        "Num. Targets", "Num. Sales", "Med. Comp. Dist. (ft)",
-        "Avg. Comp. Dist. (ft)"
+        "Num. Targets", "Num. Sales",
+        "Med. Comp. Dist. (ft)", "Avg. Comp. Dist. (ft)"
       ),
       digits = 0
     ) %>%
@@ -513,17 +500,13 @@ format_agg_stats <- function(df,
     ) %>%
     formatCurrency(
       c(
-        "Med. PIN Pred. Price",
-        "Med. Target Sale Price",
+        "Med. PIN Pred. Price", "Med. Target Sale Price",
         "Med. Comp. Sale Price"
       ),
       currency = "$",
       digits = 0
     )
-
-  return(dat)
 }
-
 
 # Function to calculate aggregate comp statistics per group and number of comps
 gen_agg_stats <- function(df, group_cols, n) {
