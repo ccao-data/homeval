@@ -381,7 +381,7 @@ merged_model_comps <- comps_long %>%
     )
   ) %>%
   # Filter for only cards in the selected tri
-  filter(ccao::town_get_triad(target_township_code) == triad)
+  filter(town_get_triad(target_township_code) == triad)
 
 # Calculate the distance between the target and each comparable property/sale
 merged_w_dist <- merged_model_comps %>%
@@ -836,7 +836,7 @@ merged_no_flags %>%
   as_tibble() %>%
   mutate(
     Triad = town_get_triad(target_township_code, name = TRUE),
-    target_township_code = ccao::town_convert(target_township_code)
+    target_township_code = town_convert(target_township_code)
   ) %>%
   rename(Township = target_township_code) %>%
   relocate(Triad, .before = Township) %>%
@@ -889,7 +889,7 @@ comps_by_pin_sales_agg <- merged_no_flags[
   ),
   by = c("run_id", "target_pin", "target_township_code", "target_class")
 ][
-  , target_township_name := ccao::town_convert(target_township_code)
+  , target_township_name := town_convert(target_township_code)
 ]
 
 
