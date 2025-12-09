@@ -93,7 +93,7 @@ if (!file.exists(cache_file)) {
 
   assessment_card <- dbGetQuery(
     conn,
-    "SELECT * FROM pinval.vw_assessment_card"
+    "SELECT * FROM pinval.assessment_card"
   )
 
   write_parquet(assessment_card, cache_file)

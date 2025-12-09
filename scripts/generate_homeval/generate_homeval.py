@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--run-id",
         required=True,
-        help="Comps run ID used by the pinval.vw_comps view (e.g. 2025-06-14-flamboyant-rob)",
+        help="Comps run ID used by the pinval.comps view (e.g. 2025-06-14-flamboyant-rob)",
     )
 
     parser.add_argument(
@@ -620,7 +620,9 @@ def compute_shap_weights(df: pd.DataFrame) -> pd.DataFrame:
     that is easier for readers to interpret than the raw weight.
     """
 
-    shap_cols = [col for col in df.columns if col.startswith("shap_")]
+    shap_cols = [
+        col for col in df.columns if col.startswith("shap_") and col != "shap_run_id"
+    ]
     # Sum the absolute values of every SHAP in each row, setting sums of zero
     # to null to be safe (avoids division by zero)
     sum_df = df[shap_cols].abs().sum(axis=1).replace(0, np.nan)
