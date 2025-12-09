@@ -31,3 +31,6 @@ scratch*.*
 # Python files
 *.pyc
 *.egg-info/
+
+# VSCode/Positron configuration files
+.vscode/
