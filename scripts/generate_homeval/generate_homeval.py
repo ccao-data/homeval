@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--run-id",
         required=True,
-        help="Comps run ID used by the pinval.vw_comps view (e.g. 2025-06-14-flamboyant-rob)",
+        help="Comps run ID used by the pinval.comps view (e.g. 2025-06-14-flamboyant-rob)",
     )
 
     parser.add_argument(
