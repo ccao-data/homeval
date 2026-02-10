@@ -64,3 +64,77 @@ We manage deployments using the [`generate-homeval` GitHub
 workflow](https://github.com/ccao-data/homeval/actions/workflows/generate-homeval.yaml).
 That workflow includes options for deploying to a development environment as
 well as the production environment.
+
+### Deploying a new model run
+
+During modeling season, we often deploy non-final model runs to the staging app
+in order to QC the pipeline before we deploy to prod. We also perform
+one final deployment to the prod app once we've finalized the model. These
+updates can be tricky, since they require strategically building certain dbt
+resources in the [`data-architecture`
+repo](https://github.com/ccao-data/data-architecture/) in the correct order.
+
+See the sections below for detailed instructions on how to perform these
+deployments, with slightly different steps for staging and prod.
+
+#### Deploying to staging for a new, non-final model run
+
+1. Create a new branch in `data-architecture` to deploy staging versions of the
+   dbt models that HomeVal depends on for its data
+2. Update the `pinval.model_run` seed with the non-final model runs to use as
+   the basis for cards, comps, and SHAPs
+3. Update the `model.final_model_raw` seed with the non-final model run that
+   you used for the `card` type in step 2
+4. Update the `pinval.comp` dbt model so that the `WHERE` filter in the
+   `training_data` subquery includes the non-final model run that you added to
+   `model.final_model_raw` in step 3
+5. Commit your changes to your branch, push it, and open a PR
+   - Your PR will trigger a `build-and-run-dbt` workflow to build staging
+     resources. This build will fail, since not all of the necessary precursor
+     resources will exist yet. Ignore this failure and move on to the next step
+6. Trigger three sequential [`build-and-test-dbt`
+   workflows](https://github.com/ccao-data/data-architecture/actions/workflows/build_and_test_dbt.yaml)
+   using your branch. For the input box labeled "A space-separated list of dbt models",
+   set the following values for each workflow run, respectively:
+      - Workflow 1: `model.final_model`
+      - Workflow 2: `model.training_data`
+      - Workflow 3: `pinval.assessment_card pinval.comp`
+7. Create a new branch in this repo to deploy a staging version of the site
+8. Take note of the schemas that dbt used to create your staging resources
+   in the workflow logs from step 5 above, and edit
+   `scripts/generate_homeval/constants.py` in this repo to point to the staging
+   versions of the core HomeVal tables. Core HomeVal tables include:
+      - `HOMEVAL_ASSESSMENT_CARD_TABLE`
+      - `HOMEVAL_COMP_TABLE`
+9. Kick off a [`generate-homeval` workflow
+   run](https://github.com/ccao-data/homeval/actions/workflows/generate-homeval.yaml)
+   using the following parameters:
+   - "Use workflow from": Select your branch name
+   - "Assessment year": The assessment year for the new model run that you
+     would like to use as the basis for your staging deployment
+   - "Environment": "Development bucket"
+   - "Build reports by neighborhood": Check the box
+   - "Only generate reports for PINs that are eligible for reports": You can
+     leave this either checked or unchecked, depending on whether you want
+     to generate verbose error pages; for staging deployments, verbose error
+     pages are usually not necessary
+   - Leave all other fields either blank or unchecked
+
+#### Deploying to prod for a new, final model run
+
+1. Follow steps 1-6 in the instructions above for deploying to staging
+2. Seek approval on your `data-architecture` PR, merge it in, and wait for
+   the `build-and-test-dbt` workflow to rebuild prod resources
+   - This may not rebuild `model.training_data`, in which case you should
+     manually dispatch a workflow run to build that table, and then
+     dispatch another one to build `pinval.comp` and `pinval.assessment_card`
+3. Once dbt has rebuilt `pinval.comp` and `pinval.assessment_card` using the
+   new model run, kick off a [`generate-homeval` workflow
+   run](https://github.com/ccao-data/homeval/actions/workflows/generate-homeval.yaml)
+   using the following parameters:
+   - "Use workflow from": "main"
+   - "Assessment year": The assessment year for the new model run that you
+     would like to use as the basis for your staging deployment
+   - "Environment": "Production bucket"
+   - "Build reports by neighborhood": Check the box
+   - Leave all other fields either blank or unchecked
