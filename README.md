@@ -124,9 +124,6 @@ deployments, with slightly different steps for staging and prod.
 1. Follow steps 1-6 in the instructions above for deploying to staging
 2. Seek approval on your `data-architecture` PR, merge it in, and wait for
    the `build-and-test-dbt` workflow to rebuild prod resources
-   - This may not rebuild `model.training_data`, in which case you should
-     manually dispatch a workflow run to build that table, and then
-     dispatch another one to build `pinval.comp` and `pinval.assessment_card`
 3. Once dbt has rebuilt `pinval.comp` and `pinval.assessment_card` using the
    new model run, kick off a [`generate-homeval` workflow
    run](https://github.com/ccao-data/homeval/actions/workflows/generate-homeval.yaml)
