@@ -92,13 +92,12 @@ deployments, with slightly different steps for staging and prod.
    - Your PR will trigger a `build-and-run-dbt` workflow to build staging
      resources. This build will fail, since not all of the necessary precursor
      resources will exist yet. Ignore this failure and move on to the next step
-6. Trigger three sequential [`build-and-test-dbt`
-   workflows](https://github.com/ccao-data/data-architecture/actions/workflows/build_and_test_dbt.yaml)
-   using your branch. For the input box labeled "A space-separated list of dbt models",
-   set the following values for each workflow run, respectively:
-      - Workflow 1: `model.final_model`
-      - Workflow 2: `model.training_data`
-      - Workflow 3: `pinval.assessment_card pinval.comp`
+6. Trigger a [`build-and-test-dbt`
+   workflow](https://github.com/ccao-data/data-architecture/actions/workflows/build_and_test_dbt.yaml)
+   using your branch to build necessary HomeVal resources in the right order.
+   Use the following value for the input box labeled
+   "A space-separated list of dbt models",
+      - `model.final_model model.training_data pinval.assessment_card pinval.comp`
 7. Create a new branch in this repo to deploy a staging version of the site
 8. Take note of the schemas that dbt used to create your staging resources
    in the workflow logs from step 5 above, and edit
