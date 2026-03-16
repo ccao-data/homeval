@@ -178,6 +178,21 @@
         </div>
       {{ end }}
 
+      {{ if .Params.special_case_analyst_review }}
+        <div class="alert alert-warning">
+          <p>
+            <i class="bi bi-exclamation-triangle"></i>
+            <strong>Special note:</strong> This property type does receive an
+            initial estimated value from the sales-based statistical model. But,
+            because the market value of this kind of property can depend on
+            income and expense data not in the statistical model, this property
+            type often receives a new valuation later during analyst review.
+            Because of this, the characteristics and data in this report below
+            might not explain the property's assessed value.
+          </p>
+        </div>
+      {{ end }}
+
       <!-- Report contents. This is structured differently depending on whether the parcel is multicard. -->
       {{ if $is_multicard }}
         <!-- Multicard: Create a tab for each card to show its characteristics -->

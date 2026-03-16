@@ -194,6 +194,8 @@ def build_front_matter(
         Mapping of variable code for labels and tooltips
     """
     special_multi = bool(df_target_pin["is_parcel_small_multicard"].iloc[0])
+    analyst_review_classes = {"212", "218", "219"}
+    analyst_review = str(df_target_pin["char_class"].iloc[0]) in analyst_review_classes
 
     # Header
     tp = df_target_pin.iloc[0]  # all cards share the same PIN-level chars
@@ -222,6 +224,7 @@ def build_front_matter(
         "cards": [],
         "var_info": vars_dict,
         "special_case_multi_card": special_multi,
+        "special_case_analyst_review": analyst_review,
         "environment": environment,
         "is_prorated": tp["is_prorated"],
     }
