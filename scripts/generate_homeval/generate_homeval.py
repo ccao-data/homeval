@@ -225,6 +225,7 @@ def build_front_matter(
         "var_info": vars_dict,
         "special_case_multi_card": special_multi,
         "special_case_analyst_review": analyst_review,
+        "char_class": str(df_target_pin["char_class"].iloc[0]),
         "environment": environment,
         "is_prorated": tp["is_prorated"],
     }

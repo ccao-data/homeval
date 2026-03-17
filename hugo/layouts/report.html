@@ -71,6 +71,16 @@
           It is not the same as the Assessor's "comps" tool for reviewing residential appeal
           filings, and it is only intended to be used for educational purposes.
         </p>
+        {{ if .Params.special_case_analyst_review }}
+          <p>
+            Since your home is a class {{ .Params.char_class }} property, analysts at the
+            Assessor's office are likely to change its value during the review process.
+            That's because the market value of this kind of property can depend on income
+            and expense data that are not included in the statistical model. Because of
+            this, the characteristics and sales in this report might not explain your
+            home's assessed value.
+          </p>
+        {{ end }}
       </div>
 
       <div class="info-box border">
@@ -174,21 +184,6 @@
               and similar sales
             {{ end }}
             for each card.
-          </p>
-        </div>
-      {{ end }}
-
-      {{ if .Params.special_case_analyst_review }}
-        <div class="alert alert-warning">
-          <p>
-            <i class="bi bi-exclamation-triangle"></i>
-            <strong>Special note:</strong> This property type does receive an
-            initial estimated value from the sales-based statistical model. But,
-            because the market value of this kind of property can depend on
-            income and expense data not in the statistical model, this property
-            type often receives a new valuation later during analyst review.
-            Because of this, the characteristics and data in this report below
-            might not explain the property's assessed value.
           </p>
         </div>
       {{ end }}
