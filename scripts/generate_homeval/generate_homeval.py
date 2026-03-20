@@ -215,7 +215,7 @@ def build_front_matter(
         "final_model_run_date": pd.to_datetime(tp["final_model_run_date"]).strftime(
             "%B %d, %Y"
         )
-        if tp["final_model_run_date"]
+        if pd.notna(tp["final_model_run_date"])
         else None,
         "pin": tp["meta_pin"],
         "pin_pretty": pin_pretty(tp["meta_pin"]),
