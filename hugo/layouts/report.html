@@ -844,124 +844,133 @@
         }
       ).addTo(map);
 
-      // Add subject property marker
-      const subjectMarker = L.circleMarker(
-        [cardData.location.loc_latitude, cardData.location.loc_longitude],
-        {
-          radius: 5,
-          color: "black",
-          weight: 2,
-          fill: false,
-          fillOpacity: 0
-        }
-      ).addTo(map);
-
       // Prepare bounds to fit all markers
       const bounds = L.latLngBounds();
-      bounds.extend([cardData.location.loc_latitude, cardData.location.loc_longitude]);
 
-      // Add subject property label and popup
-      let hasSubjectSale = false;
-
-      // Check if subject property is also a comp
-      cardData.comps.forEach(comp => {
-        if (comp.is_subject_pin_sale) {
-          hasSubjectSale = true;
-        }
-      });
-
-      if (!hasSubjectSale) {
-        const propertyLabel = cardData.is_multicard ? "Subject card" : "Your home";
-        subjectMarker.bindTooltip(
-          propertyLabel,
+      // Add subject property marker, but skip it if the card has no coords
+      const subjectCardHasLocationInfo = cardData.location.loc_latitude && cardData.location.loc_longitude;
+      if (subjectCardHasLocationInfo) {
+        const subjectMarker = L.circleMarker(
+          [cardData.location.loc_latitude, cardData.location.loc_longitude],
           {
-            permanent: true,
-            // Propagate click events from the marker to its tooltip so that
-            // users can open the detail popup by clicking on the tooltip.
-            // This is particularly helpful on mobile since it can be hard
-            // to tap precisely on the circle marker
-            interactive: true,
-            direction: "top",
-            offset: [0, -4],
-            className: "subject-tooltip"
+            radius: 5,
+            color: "black",
+            weight: 2,
+            fill: false,
+            fillOpacity: 0
           }
-        );
+        ).addTo(map);
 
-        // Define subjectPopupContent dynamically depending on 2-3 card case
-        const bldgLabel = specialMulti ? "Combined Bldg. Sq. Ft." : "Bldg S.F.";
-        const bldgValue = specialMulti ? cardData.chars.combined_bldg_sf : cardData.chars.char_bldg_sf;
+        // Make sure map bounds fit the subject card
+        bounds.extend([cardData.location.loc_latitude, cardData.location.loc_longitude]);
 
-        // Create popup content
-        const subjectPopupContent = `
-          <h5>${propertyLabel}</h5>
-          <b>Address</b>: ${cardData.location.property_address}
-          <br><b>PIN</b>: <a href="https:\/\/www.cookcountyassessoril.gov/pin/${pin}" target="_blank">${pinPretty}</a>
-          <br><b>Property class</b>: ${cardData.chars.char_class}
-          <br><b>Assessor neighborhood</b>: ${cardData.location.meta_nbhd_code}
-          <br><b>Year built</b>: ${cardData.chars.char_yrblt}
-          <br><b>${bldgLabel}</b>: ${bldgValue}
-          <br><b>Land S.F.</b>: ${cardData.chars.char_land_sf}
-          <br><b>Beds</b>: ${cardData.chars.char_beds}
-          <br><b>Full baths</b>: ${cardData.chars.char_fbath}
-          <br><b>Half baths</b>: ${cardData.chars.char_hbath}
-        `;
+        // Add subject property label and popup
+        let hasSubjectSale = false;
 
-        subjectMarker.bindPopup(subjectPopupContent);
+        // Check if subject property is also a comp
+        cardData.comps.forEach(comp => {
+          if (comp.is_subject_pin_sale) {
+            hasSubjectSale = true;
+          }
+        });
+
+        if (!hasSubjectSale) {
+          const propertyLabel = cardData.is_multicard ? "Subject card" : "Your home";
+          subjectMarker.bindTooltip(
+            propertyLabel,
+            {
+              permanent: true,
+              // Propagate click events from the marker to its tooltip so that
+              // users can open the detail popup by clicking on the tooltip.
+              // This is particularly helpful on mobile since it can be hard
+              // to tap precisely on the circle marker
+              interactive: true,
+              direction: "top",
+              offset: [0, -4],
+              className: "subject-tooltip"
+            }
+          );
+
+          // Define subjectPopupContent dynamically depending on 2-3 card case
+          const bldgLabel = specialMulti ? "Combined Bldg. Sq. Ft." : "Bldg S.F.";
+          const bldgValue = specialMulti ? cardData.chars.combined_bldg_sf : cardData.chars.char_bldg_sf;
+
+          // Create popup content
+          const subjectPopupContent = `
+            <h5>${propertyLabel}</h5>
+            <b>Address</b>: ${cardData.location.property_address}
+            <br><b>PIN</b>: <a href="https:\/\/www.cookcountyassessoril.gov/pin/${pin}" target="_blank">${pinPretty}</a>
+            <br><b>Property class</b>: ${cardData.chars.char_class}
+            <br><b>Assessor neighborhood</b>: ${cardData.location.meta_nbhd_code}
+            <br><b>Year built</b>: ${cardData.chars.char_yrblt}
+            <br><b>${bldgLabel}</b>: ${bldgValue}
+            <br><b>Land S.F.</b>: ${cardData.chars.char_land_sf}
+            <br><b>Beds</b>: ${cardData.chars.char_beds}
+            <br><b>Full baths</b>: ${cardData.chars.char_fbath}
+            <br><b>Half baths</b>: ${cardData.chars.char_hbath}
+          `;
+
+          subjectMarker.bindPopup(subjectPopupContent);
+        }
       }
 
       // Add comp markers
       cardData.comps.forEach(comp => {
-        const compMarker = L.circleMarker(
-          [comp.loc_latitude, comp.loc_longitude],
-          {
-            radius: 4,
-            color: "#00cc00",
-            fillOpacity: 1,
-            opacity: comp.is_subject_pin_sale ? 0 : 1 // Hide the marker if it's a subject PIN sale
-          }
-        ).addTo(map);
+        // Skip adding this comp to the map if it doesn't have location info
+        const compCardHasLocationInfo = comp.loc_latitude && comp.loc_longitude;
+        if (compCardHasLocationInfo) {
+          const compMarker = L.circleMarker(
+            [comp.loc_latitude, comp.loc_longitude],
+            {
+              radius: 4,
+              color: "#00cc00",
+              fillOpacity: 1,
+              opacity: comp.is_subject_pin_sale ? 0 : 1 // Hide the marker if it's a subject PIN sale
+            }
+          ).addTo(map);
 
-        const compBldgLabel = specialMulti ? "Combined Bldg. Sq. Ft." : "Bldg S.F.";
-        const compBldgValue = specialMulti ? comp.combined_bldg_sf : comp.char_bldg_sf;
-        // Add tooltip
-        const tooltipText = comp.is_subject_pin_sale
-          ? `${cardData.is_multicard ? "Subject card" : "Subject property"} [${comp.sale_price_short} (${comp.sale_date})]`
-          : `${comp.sale_price_short} (${comp.sale_date})`;
+          const compBldgLabel = specialMulti ? "Combined Bldg. Sq. Ft." : "Bldg S.F.";
+          const compBldgValue = specialMulti ? comp.combined_bldg_sf : comp.char_bldg_sf;
+          // Add tooltip
+          const tooltipText = comp.is_subject_pin_sale
+            ? `${cardData.is_multicard ? "Subject card" : "Subject property"} [${comp.sale_price_short} (${comp.sale_date})]`
+            : `${comp.sale_price_short} (${comp.sale_date})`;
 
-        compMarker.bindTooltip(
-          tooltipText,
-          {
-            permanent: true,
-            interactive: true,
-            direction: "top",
-            offset: [0, -4],
-            className: "comp-tooltip"
-          }
-        );
+          compMarker.bindTooltip(
+            tooltipText,
+            {
+              permanent: true,
+              interactive: true,
+              direction: "top",
+              offset: [0, -4],
+              className: "comp-tooltip"
+            }
+          );
 
-        // Create popup content
-        const compPopupContent = `
-          <h5>${comp.is_subject_pin_sale ? (cardData.is_multicard ? "Subject card" : "Subject property") : "Sale " + comp.comp_num}</h5>
-          <b>Address</b>: ${comp.property_address}
-          <br><b>PIN</b>: <a href="https:\/\/www.cookcountyassessoril.gov/pin/${comp.pin}" target="_blank">${comp.pin_pretty}</a>
-          <br><b>Property class</b>: ${comp.char_class}
-          <br><b>Assessor neighborhood</b>: ${comp.meta_nbhd_code}
-          <br><b>Sale price</b>: ${comp.sale_price}
-          <br><b>Sale $/sqft</b>: ${comp.sale_price_per_sq_ft}
-          <br><b>Sale date</b>: ${comp.sale_date}
-          <br><b>Sale doc. num.</b>: ${comp.document_num}
-          <br><b>Year built</b>: ${comp.char_yrblt}
-          <br><b>${compBldgLabel}</b>: ${compBldgValue}
-          <br><b>Land S.F.</b>: ${comp.char_land_sf}
-          <br><b>Beds</b>: ${comp.char_beds}
-          <br><b>Full baths</b>: ${comp.char_fbath}
-          <br><b>Half baths</b>: ${comp.char_hbath}
-        `;
+          // Create popup content
+          const compPopupContent = `
+            <h5>${comp.is_subject_pin_sale ? (cardData.is_multicard ? "Subject card" : "Subject property") : "Sale " + comp.comp_num}</h5>
+            <b>Address</b>: ${comp.property_address}
+            <br><b>PIN</b>: <a href="https:\/\/www.cookcountyassessoril.gov/pin/${comp.pin}" target="_blank">${comp.pin_pretty}</a>
+            <br><b>Property class</b>: ${comp.char_class}
+            <br><b>Assessor neighborhood</b>: ${comp.meta_nbhd_code}
+            <br><b>Sale price</b>: ${comp.sale_price}
+            <br><b>Sale $/sqft</b>: ${comp.sale_price_per_sq_ft}
+            <br><b>Sale date</b>: ${comp.sale_date}
+            <br><b>Sale doc. num.</b>: ${comp.document_num}
+            <br><b>Year built</b>: ${comp.char_yrblt}
+            <br><b>${compBldgLabel}</b>: ${compBldgValue}
+            <br><b>Land S.F.</b>: ${comp.char_land_sf}
+            <br><b>Beds</b>: ${comp.char_beds}
+            <br><b>Full baths</b>: ${comp.char_fbath}
+            <br><b>Half baths</b>: ${comp.char_hbath}
+          `;
 
-        compMarker.bindPopup(compPopupContent);
+          compMarker.bindPopup(compPopupContent);
 
-        // Add to bounds
-        bounds.extend([comp.loc_latitude, comp.loc_longitude]);
+          // Add to bounds
+          bounds.extend([comp.loc_latitude, comp.loc_longitude]);
+        }
       });
 
       // Add legend

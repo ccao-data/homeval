@@ -50,10 +50,13 @@ Then, use the script to generate reports for one or more PINs using a given
 comps run ID:
 
 ```
-AWS_ATHENA_S3_STAGING_DIR="<your_athena_staging_dir>" python3 scripts/generate_homeval/generate_homeval.py \
+python3 scripts/generate_homeval/generate_homeval.py \
    --run-id <your_comps_run_id> \
    --pin <one_or_more_space_separated_pins>
 ```
+
+If you're not sure which comps run ID to use, but you want to use the final
+comps run for a given year, see the `pinval.model_run` table.
 
 Run `python3 scripts/generate_homeval/generate_homeval.py --help` to see full
 documentation for the script.

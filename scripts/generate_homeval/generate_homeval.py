@@ -698,8 +698,11 @@ def main() -> None:
         # We add '+ "/"' to the end of the line below because enabling unload
         # requires that the staging directory end with a slash. Add rstrip because
         # the missing '/' seems to depend on different environments
-        s3_staging_dir=os.getenv("AWS_ATHENA_S3_STAGING_DIR").rstrip("/") + "/",
-        region_name=os.getenv("AWS_REGION"),
+        s3_staging_dir=os.getenv(
+            "AWS_ATHENA_S3_STAGING_DIR", "s3://ccao-athena-results-us-east-1"
+        ).rstrip("/")
+        + "/",
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
         cursor_class=PandasCursor,
     ).cursor(unload=True)
 
