@@ -195,6 +195,7 @@ def build_front_matter(
     """
     special_multi = bool(df_target_pin["is_parcel_small_multicard"].iloc[0])
     analyst_review_classes = {"212", "218", "219"}
+    # pin_class is set at the PIN level, so we can pull it from any card
     analyst_review = str(df_target_pin["pin_class"].iloc[0]) in analyst_review_classes
 
     # Header
