@@ -117,7 +117,7 @@ jobs:
           python-version-file: scripts/generate_homeval/.python-version
 
       - name: Install Python requirements
-        run: uv pip install .
+        run: uv sync --frozen
         working-directory: scripts/generate_homeval
 
       - name: Configure AWS credentials (OIDC)
@@ -198,7 +198,7 @@ jobs:
           python-version-file: scripts/generate_homeval/.python-version
 
       - name: Install Python requirements
-        run: uv pip install .
+        run: uv sync --frozen
         working-directory: scripts/generate_homeval
 
       - name: Configure AWS credentials (OIDC)
