@@ -70,7 +70,6 @@ on:
 
 env:
   PYTHONUNBUFFERED: "1"
-  UV_SYSTEM_PYTHON: 1
   AWS_REGION: us-east-1
   AWS_ATHENA_S3_STAGING_DIR: s3://ccao-athena-results-us-east-1/
   HUGO_VERSION: "0.147.5"
@@ -117,7 +116,7 @@ jobs:
           python-version-file: scripts/generate_homeval/.python-version
 
       - name: Install Python requirements
-        run: uv pip install .
+        run: uv sync --frozen
         working-directory: scripts/generate_homeval
 
       - name: Configure AWS credentials (OIDC)
@@ -138,7 +137,10 @@ jobs:
           if [ "${{ inputs.eligible-only }}" = "true" ]; then
             ELIG_FLAG="--eligible-only"
           fi
-          python3 scripts/generate_homeval/resolve_model_metadata.py \
+          uv run \
+            --frozen \
+            --project scripts/generate_homeval \
+            python3 scripts/generate_homeval/resolve_model_metadata.py \
             --year "${{ inputs.year }}" \
             --run-id "${{ inputs.run_id }}" \
             --pin "${PINS[@]}" \
@@ -198,7 +200,7 @@ jobs:
           python-version-file: scripts/generate_homeval/.python-version
 
       - name: Install Python requirements
-        run: uv pip install .
+        run: uv sync --frozen
         working-directory: scripts/generate_homeval
 
       - name: Configure AWS credentials (OIDC)
@@ -241,7 +243,10 @@ jobs:
           # Unquoted neighborhood flag is intentional in this call, since we
           # want this to expand to nothing (rather than an empty string) if
           # the variable is empty
-          python3 scripts/generate_homeval/generate_homeval.py \
+          uv run \
+            --frozen \
+            --project scripts/generate_homeval \
+            python3 scripts/generate_homeval/generate_homeval.py \
             --run-id "$RUN_ID" \
             --township "$TOWNSHIP" \
             --pin "${PINS[@]}" \
