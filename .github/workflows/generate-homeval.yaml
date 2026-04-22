@@ -72,7 +72,7 @@ env:
   PYTHONUNBUFFERED: "1"
   AWS_REGION: us-east-1
   AWS_ATHENA_S3_STAGING_DIR: s3://ccao-athena-results-us-east-1/
-  HUGO_VERSION: "0.147.5"
+  HUGO_VERSION: "0.159.2"
 
 defaults:
   run:
