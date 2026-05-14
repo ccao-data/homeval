@@ -41,9 +41,10 @@ Start by creating a virtual environment for the script and installing its
 dependencies:
 
 ```
-uv venv scripts/generate_homeval/.venv
-source scripts/generate_homeval/.venv/bin/activate
-uv pip install scripts/generate_homeval
+cd scripts/generate_homeval
+uv sync --frozen
+source .venv/bin/activate
+cd ../..
 ```
 
 Then, use the script to generate reports for one or more PINs using a given
