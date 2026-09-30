@@ -269,7 +269,11 @@ jobs:
             REMOTE="${REMOTE}/${YEAR}"
           fi
 
-          aws s3 sync "${LOCAL}/" "${REMOTE}/" --no-progress
+          # Use `cp` instead of `sync`, since `sync` lists every object under
+          # the remote prefix before uploading, which takes minutes once the
+          # bucket holds a full year of reports. The runner starts clean, so
+          # the local dir only contains the reports built in this job
+          aws s3 cp "${LOCAL}/" "${REMOTE}/" --recursive --no-progress
 
 ###############################################################################
 # Invalidate cache and notify
