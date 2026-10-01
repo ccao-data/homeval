@@ -834,9 +834,12 @@
         14
       );
 
+      {{/* Carto basemap API key, restricted to the prod and staging hosts */}}
+      const cartoKey = {{ cond hugo.IsServer "" "cb1_45dr_1_d676f2f54005676a45bee03c" }};
+
       // Add tile layer
       L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${cartoKey}`,
         {
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
           maxZoom: 19,
