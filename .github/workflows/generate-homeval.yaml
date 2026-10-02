@@ -269,7 +269,7 @@ jobs:
             REMOTE="${REMOTE}/${YEAR}"
           fi
 
-          aws s3 sync "${LOCAL}/" "${REMOTE}/" --no-progress
+          aws s3 cp "${LOCAL}/" "${REMOTE}/" --recursive --no-progress
 
 ###############################################################################
 # Invalidate cache and notify
