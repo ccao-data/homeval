@@ -577,11 +577,12 @@ gen_agg_stats <- function(df, group_cols, n) {
 }
 
 plot_ind_obs <- function(
-    df,
-    x, y, grp,
-    x_lab, y_lab, grp_lab,
-    slope = 1,
-    id_prefix = "desc") {
+  df,
+  x, y, grp,
+  x_lab, y_lab, grp_lab,
+  slope = 1,
+  id_prefix = "desc"
+) {
   df <- df %>%
     dplyr::mutate(Algorithm = as.character(Algorithm))
 
@@ -696,9 +697,10 @@ plot_ind_obs <- function(
 }
 
 plot_ind_char_obs <- function(
-    df, x, y, grp, x_lab, y_lab, grp_lab,
-    slope = 1, labels = waiver(),
-    id_prefix = "desc") {
+  df, x, y, grp, x_lab, y_lab, grp_lab,
+  slope = 1, labels = waiver(),
+  id_prefix = "desc"
+) {
   df <- df %>%
     dplyr::mutate(Algorithm = as.character(Algorithm))
 
