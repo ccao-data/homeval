@@ -31,6 +31,37 @@ hugo serve
 3. Any reports that [you have generated](#generating-reports)
    will be available in a browser at http://localhost:1313/.
 
+### Setting up a Carto API key for local maps
+
+Report maps use [Carto](https://carto.com/) basemap tiles. The API key that
+we use for deployed reports only works on the prod and staging hosts, so maps
+on the development server will show a Carto watermark unless you set up your
+own key for local development. You can skip this step if you don't need
+maps locally.
+
+1. Sign up for a Carto account using your work email and create a new
+   basemaps API key.
+2. Under **Restrictions**, enable **Restrict to specific websites
+   (Referer)** and enter `localhost` and `127.0.0.1`. Leave the other
+   restrictions off. See the [Carto
+   docs](https://docs.carto.com/faqs/carto-basemaps#why-are-my-tiles-refused-403-when-my-key-has-website-restrictions)
+   for details on local development keys.
+3. Add the key to your shell profile (e.g. `~/.bashrc`), then restart your
+   shell:
+
+```
+export HUGO_CARTO_KEY=<your_key>
+```
+
+4. Run `hugo serve` and open a report that has a map. The tiles should load
+   with no watermark, and in your browser's DevTools, the Network tab should
+   show requests to `basemaps.cartocdn.com` containing `?key=<your_key>`.
+
+> [!WARNING]
+> Don't commit your local key. This repo is public, and the referer
+> restriction doesn't stop anyone else from using a key on their own
+> `localhost`.
+
 ### Generating reports
 
 You can use the [`generate_homeval`
@@ -53,8 +84,14 @@ comps run ID:
 ```
 python3 scripts/generate_homeval/generate_homeval.py \
    --run-id <your_comps_run_id> \
-   --pin <one_or_more_space_separated_pins>
+   --pin <one_or_more_space_separated_pins> \
+   --skip-html
 ```
+
+The `--skip-html` flag keeps the generated Markdown files in `hugo/content/`
+so that the [development server](#running-a-development-server) can render
+them. Without it, the script builds static HTML into `hugo/public/` and then
+deletes the Markdown, so the reports won't be available from `hugo serve`.
 
 If you're not sure which comps run ID to use, but you want to use the final
 comps run for a given year, see the `pinval.model_run` table.
