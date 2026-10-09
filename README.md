@@ -39,8 +39,8 @@ on the development server will show a Carto watermark unless you set up your
 own key for local development. You can skip this step if you don't need
 maps locally.
 
-1. Sign up for a Carto account using your work email and create a new
-   basemaps API key.
+1. [Sign up for a Carto API key](https://carto.com/basemaps/apikey/) using
+   your work email.
 2. Under **Restrictions**, enable **Restrict to specific websites
    (Referer)** and enter `localhost` and `127.0.0.1`. Leave the other
    restrictions off. See the [Carto
