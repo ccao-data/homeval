@@ -53,9 +53,10 @@ maps locally.
 export HUGO_CARTO_KEY=<your_key>
 ```
 
-4. Run `hugo serve` and open a report that has a map. The tiles should load
-   with no watermark, and in your browser's DevTools, the Network tab should
-   show requests to `basemaps.cartocdn.com` containing `?key=<your_key>`.
+4. [Generate a report](#generating-reports) if you haven't already, then run
+   `hugo serve` and open it. The tiles should load with no watermark, and in
+   your browser's DevTools, the Network tab should show requests to
+   `basemaps.cartocdn.com` containing `?key=<your_key>`.
 
 > [!WARNING]
 > Don't commit your local key. This repo is public, and the referer
