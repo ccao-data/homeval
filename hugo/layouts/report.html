@@ -834,8 +834,10 @@
         14
       );
 
-      {{/* Carto basemap API key, restricted to the prod and staging hosts */}}
-      const cartoKey = {{ cond hugo.IsServer "" "cb1_45dr_1_d676f2f54005676a45bee03c" }};
+      {{/* Carto basemap API key. Deployed builds use a key restricted to the
+        prod and staging hosts; `hugo serve` reads a local key from the
+        HUGO_CARTO_KEY env var (see README) */}}
+      const cartoKey = {{ cond hugo.IsServer (getenv "HUGO_CARTO_KEY") "cb1_45dr_1_d676f2f54005676a45bee03c" }};
 
       // Add tile layer
       L.tileLayer(
